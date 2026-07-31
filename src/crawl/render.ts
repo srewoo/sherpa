@@ -24,8 +24,31 @@ export function needsRender(wordTotal: number, min = MIN_WORDS): boolean {
   return wordTotal < min;
 }
 
-/** Load `url` in a hidden tab, wait for it to settle, and return the DOM HTML. */
+/**
+ * Ask for `url` to be rendered and return the settled DOM.
+ *
+ * The crawl runs in the offscreen document, which may only use
+ * `chrome.runtime` — `chrome.tabs` and `chrome.scripting` are unavailable
+ * there. So the offscreen doc asks the service worker to do the tab work and
+ * hand back the HTML; `renderPageInTab` below is the worker-side half.
+ */
 export async function renderInTab(url: string): Promise<string | null> {
+  try {
+    const response = (await chrome.runtime.sendMessage({ type: "render/page", url })) as
+      | { html?: string | null }
+      | undefined;
+    return response?.html ?? null;
+  } catch {
+    // No listener, or the render failed — fall back to the static HTML.
+    return null;
+  }
+}
+
+/**
+ * Service-worker side: load the page in a background tab, let it settle, read
+ * the rendered DOM, and always clean the tab up.
+ */
+export async function renderPageInTab(url: string): Promise<string | null> {
   let tabId: number | undefined;
   try {
     const tab = await chrome.tabs.create({ url, active: false });

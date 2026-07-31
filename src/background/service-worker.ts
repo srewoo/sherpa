@@ -5,6 +5,7 @@
  */
 
 import { isMessage, type Message } from "./messages.js";
+import { renderPageInTab } from "@/crawl/render.js";
 
 const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
 
@@ -63,6 +64,14 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
     case "crawl/recrawl-full":
       ensureOffscreen().then(() => sendResponse({ ok: true }));
       return true; // async response
+
+    /**
+     * The offscreen document can only use chrome.runtime, so the SPA render
+     * fallback (PRD 5.2.11) has to borrow the worker's tabs access.
+     */
+    case "render/page":
+      renderPageInTab(msg.url).then((html) => sendResponse({ html }));
+      return true;
     default:
       return false;
   }

@@ -1,10 +1,12 @@
 /**
- * Side-panel → offscreen query bridge. Sends a question and delivers the
- * streamed PanelEvents to a callback. Guarded so the same App renders in a plain
- * browser preview (no chrome APIs) as in the installed extension.
+ * Side-panel → offscreen bridge. Sends a question and delivers the streamed
+ * PanelEvents to a callback. Guarded so the same App renders in a plain browser
+ * preview (no chrome APIs) as in the installed extension.
  */
 
 import type { PanelEvent } from "@/shared/answer.js";
+import { openSherpaDb } from "@/storage/db.js";
+import { queryLogStore } from "@/gap/queryLog.js";
 
 export const hasExtension =
   typeof chrome !== "undefined" && Boolean(chrome.runtime?.id);
@@ -30,8 +32,21 @@ export function askQuery(
   });
 }
 
-export async function activeIndexId(): Promise<string> {
-  if (!hasExtension) return "";
-  const s = await chrome.storage.local.get("activeIndexId");
-  return (s["activeIndexId"] as string | undefined) ?? "";
+/** Record 👍/👎 against the logged query, feeding the gap report (PRD 5.9.8). */
+export async function sendFeedback(
+  indexId: string,
+  query: string,
+  feedback: "up" | "down",
+): Promise<void> {
+  if (!hasExtension) return;
+  const db = await openSherpaDb();
+  await queryLogStore.setFeedback(db, indexId, query, feedback);
+}
+
+/** Kick off an incremental refresh of the active index from the panel (5.6.2). */
+export function requestRefresh(indexId: string): void {
+  if (!hasExtension) return;
+  void chrome.runtime.sendMessage({ type: "ensure-offscreen" }).finally(() => {
+    void chrome.runtime.sendMessage({ type: "crawl/recrawl", indexId });
+  });
 }

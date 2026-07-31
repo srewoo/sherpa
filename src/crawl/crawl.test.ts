@@ -233,4 +233,138 @@ describe("runCrawl", () => {
     expect(outcome).toEqual({ reason: "done" });
     expect((await frontier.counts(db, "i")).skipped).toBe(1);
   });
+
+  it("tolerates an isolated 403 instead of aborting the crawl (5.2.8)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/admin", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+    const seen: string[] = [];
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom({ "/a": "ok", "/admin": 403, "/b": "ok" }),
+      onPage: async (res) => {
+        seen.push(new URL(res.url).pathname);
+      },
+    });
+    expect(outcome).toEqual({ reason: "done" });
+    // One gated article must not cost us the other pages.
+    expect(seen.sort()).toEqual(["/a", "/b"]);
+  });
+
+  it("stops once 403s cluster into a real auth wall", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+      { url: "https://docs.x.com/c", depth: 0 },
+    ]);
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom({ "/a": 403, "/b": 403, "/c": 403 }),
+      onPage: async () => {},
+    });
+    expect(outcome.reason).toBe("auth");
+  });
+
+  it("indexes nothing from a noindex page but still follows its links (5.2.4)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: ROOT, depth: 0 }]);
+    const seen: string[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom({
+        "/": '<meta name="robots" content="noindex"><a href="/keep">keep</a>',
+        "/keep": "real content",
+      }),
+      onPage: async (res) => {
+        seen.push(new URL(res.url).pathname);
+      },
+    });
+    expect(seen).toEqual(["/keep"]);
+    expect((await frontier.counts(db, "i")).skipped).toBe(1);
+  });
+
+  it("honours an X-Robots-Tag: noindex header", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: ROOT, depth: 0 }]);
+    const seen: string[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg(),
+      ...base,
+      fetcher: async (url) => ({
+        url,
+        finalUrl: url,
+        status: 200,
+        html: "plenty of words here",
+        etag: undefined,
+        lastmod: undefined,
+        robotsTag: "noindex",
+      }),
+      onPage: async (res) => {
+        seen.push(res.url);
+      },
+    });
+    expect(seen).toEqual([]);
+  });
+
+  it("counts pages already fetched against maxPages when resuming (5.2.2)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+    const seen: string[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ maxPages: 3, concurrency: 1 }),
+      ...base,
+      // Two pages were indexed before the interruption.
+      alreadyDone: 2,
+      fetcher: fetcherFrom({ "/a": "ok", "/b": "ok" }),
+      onPage: async (res) => {
+        seen.push(new URL(res.url).pathname);
+      },
+    });
+    // Only one slot was left under the ceiling.
+    expect(seen).toHaveLength(1);
+  });
+
+  it("respects a robots.txt Crawl-delay over the configured rate (5.2.4)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+    const waits: number[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ requestsPerSecond: 10, concurrency: 1 }),
+      ...base,
+      robots: parseRobots("User-agent: *\nCrawl-delay: 2"),
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+      now: () => 0, // freeze time so the wait reflects the reserved interval
+      fetcher: fetcherFrom({ "/a": "ok", "/b": "ok" }),
+      onPage: async () => {},
+    });
+    // 10 req/s would be a 100ms interval; Crawl-delay: 2 forces 2000ms.
+    expect(Math.max(...waits)).toBeGreaterThanOrEqual(2000);
+  });
 });

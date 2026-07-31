@@ -11,6 +11,13 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
+    /**
+     * Chrome refuses modulepreload hints across extension worlds ("cross-world
+     * extension resource mismatch") and then warns again that the preload went
+     * unused. The hints buy nothing for locally-bundled scripts, so dropping
+     * them just removes the noise.
+     */
+    modulePreload: false,
     rollupOptions: {
       input: {
         sidepanel: "src/sidepanel/index.html",

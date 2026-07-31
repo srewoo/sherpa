@@ -13,6 +13,7 @@ export function Settings(): JSX.Element {
   const [floor, setFloor] = useState(0.45);
   const [estimate, setEstimate] = useState<StorageEstimate | null>(null);
   const [persisted, setPersisted] = useState(false);
+  const [wipeError, setWipeError] = useState("");
 
   useEffect(() => {
     void loadSettings().then((s) => {
@@ -34,8 +35,14 @@ export function Settings(): JSX.Element {
   };
 
   const onDeleteAll = async (): Promise<void> => {
-    if (!confirm("Delete every index, the stored API key, and all settings? This cannot be undone.")) return;
-    await deleteEverything();
+    if (!confirm("Delete every index, the stored API key, and all settings? This cannot be undone."))
+      return;
+    const result = await deleteEverything();
+    if (!result.deleted) {
+      // Never claim a wipe that didn't happen (PRD 5.10.6).
+      setWipeError(result.blockedBy ?? "Could not delete the local index.");
+      return;
+    }
     location.reload();
   };
 
@@ -122,6 +129,7 @@ export function Settings(): JSX.Element {
         <div className="card-head"><h2 style={{ color: "var(--danger)" }}>Delete everything</h2></div>
         <div className="card-body stack-3">
           <p className="help">Permanently erases every index, the stored API key, all host permissions data, and settings. This cannot be undone.</p>
+          {wipeError && <div className="notice notice-amber"><span>{wipeError}</span></div>}
           <button className="btn btn-danger-solid" type="button" onClick={() => void onDeleteAll()}>Delete everything</button>
         </div>
       </section>

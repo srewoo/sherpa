@@ -44,6 +44,11 @@ export async function createEmbedder(): Promise<Embedder> {
   env.allowRemoteModels = false;
   env.allowLocalModels = true;
   env.localModelPath = assetUrl("models/");
+  // The weights already live inside the extension, so there is nothing to gain
+  // from copying them into the Cache API — and Cache.put rejects
+  // chrome-extension:// URLs outright, which is what logs
+  // "Request scheme 'chrome-extension' is unsupported" on every load.
+  env.useBrowserCache = false;
   // Same for the ONNX runtime itself — without this, transformers.js pulls its
   // .wasm from jsdelivr, which MV3 blocks as remote code.
   env.backends.onnx.wasm.wasmPaths = assetUrl("ort/");

@@ -3,6 +3,7 @@
 import type { AnswerTier } from "@/domain/generator.js";
 
 export interface SourceView {
+  /** 1-based citation number, matching the `[n]` markers in the answer. */
   readonly index: number;
   readonly title: string;
   readonly breadcrumb: string;
@@ -13,7 +14,17 @@ export interface SourceView {
 }
 
 export type AnswerState =
-  | { readonly kind: "answer"; readonly tier: AnswerTier; readonly html: string; readonly sources: readonly SourceView[] }
+  | {
+      readonly kind: "answer";
+      readonly tier: AnswerTier;
+      /** Rendered HTML for display. */
+      readonly html: string;
+      /** The raw markdown, kept for copy-with-citations (PRD 5.9.6). */
+      readonly markdown: string;
+      readonly sources: readonly SourceView[];
+      /** True while tokens are still streaming. */
+      readonly pending?: boolean;
+    }
   | { readonly kind: "refusal"; readonly nearest: readonly SourceView[] };
 
 export interface Turn {

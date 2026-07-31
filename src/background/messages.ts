@@ -30,6 +30,10 @@ export type Message =
   | { readonly type: "crawl/resume" }
   | { readonly type: "crawl/progress"; readonly progress: CrawlProgress }
   | { readonly type: "ensure-offscreen" }
+  /** Asks every context to release its database handle so it can be deleted. */
+  | { readonly type: "db/close" }
+  /** Offscreen → worker: render a JS-heavy page in a tab (PRD 5.2.11). */
+  | { readonly type: "render/page"; readonly url: string }
   | { readonly type: "panel/open" }
   | { readonly type: "query/ask"; readonly requestId: string; readonly indexId: string; readonly query: string }
   | { readonly type: "query/event"; readonly requestId: string; readonly event: PanelEvent };

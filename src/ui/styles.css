@@ -633,3 +633,51 @@ body.in-options { margin: 0; }
 .options-scroll .page > h1 { font-size: 22px; letter-spacing: -0.02em; margin-bottom: var(--s-4); }
 .options-scroll .card + .card { margin-top: var(--s-4); }
 .options-scroll .page > .soft { margin-bottom: var(--s-5); }
+
+/* ============================================================================
+   Live components added when the panel and options pages were wired to real
+   data — the site switcher menu, freshness refresh affordance, stat tiles as
+   used by the crawl preview, and code blocks in streamed answers.
+   ========================================================================== */
+
+/* Site switcher menu (PRD 5.6.6) */
+.switcher-wrap { position: relative; }
+.switcher-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 220px;
+  list-style: none; margin: 0; padding: 4px; background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  box-shadow: 0 6px 20px rgba(58, 46, 38, .12);
+}
+.switcher-menu li { margin: 0; }
+.switcher-menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: var(--r-sm); background: transparent;
+  font-size: 12.5px; color: var(--ink); text-align: left; cursor: pointer;
+}
+.switcher-menu button:hover { background: var(--surface-sunken); }
+.switcher-menu button[aria-selected="true"] { background: var(--tint-terracotta); color: var(--primary-deep); }
+
+/* Inline text button, e.g. the freshness "Refresh" nudge (PRD 5.6.2) */
+.link-btn {
+  border: 0; background: none; padding: 0; margin-left: auto;
+  font-size: 11.5px; font-weight: 600; color: var(--primary); cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
+/* Stat tiles, label/value form used by the crawl preview (PRD 5.1.4) */
+.stat-label { display: block; font-size: 11.5px; color: var(--ink-faint); font-weight: 500; letter-spacing: 0.02em; }
+.stat-value {
+  display: block; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fenced code in a streamed answer (PRD 5.8.10) */
+.answer-body pre {
+  margin: 0 0 10px; padding: 10px 12px; overflow-x: auto;
+  background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.answer-body pre code {
+  display: block; border: 0; padding: 0; background: none; color: var(--ink);
+  font-size: 12px; line-height: 1.55; white-space: pre;
+}
+.answer-body.soft { color: var(--ink-faint); font-style: italic; }

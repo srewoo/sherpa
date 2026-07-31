@@ -11,7 +11,7 @@
 import { isMessage } from "@/background/messages.js";
 import type { CrawlProgress } from "@/background/messages.js";
 import type { PanelEvent } from "@/shared/answer.js";
-import { openSherpaDb } from "@/storage/db.js";
+import { openSherpaDb, closeSherpaDb } from "@/storage/db.js";
 import { storageEstimate } from "@/storage/quota.js";
 import { previewCrawl } from "@/crawl/preview.js";
 import { invalidateSession } from "@/retrieval/session.js";
@@ -82,6 +82,12 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
       })();
       break;
     }
+    // "Delete everything" can't drop the database while we hold it open.
+    case "db/close":
+      invalidateSession();
+      controller = null;
+      void closeSherpaDb();
+      break;
     case "query/ask": {
       const { requestId, indexId, query } = raw;
       const emit = (event: PanelEvent): void => {

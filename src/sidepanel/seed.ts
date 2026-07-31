@@ -1,9 +1,21 @@
 import type { Turn } from "./types.js";
+import { renderMarkdown } from "./markdown.js";
 
 /**
- * Seeded demo conversation so the shell renders the approved design on load.
- * Replaced by live retrieval output in milestone #5.
+ * A sample exchange used only when the panel is opened outside the extension
+ * (`npm run dev` in a plain tab), so the design can be reviewed without
+ * crawling a site first. Inside Chrome the panel always starts empty and every
+ * answer comes from the live index.
  */
+const SEED_MARKDOWN = `Northwind supports overlapping keys, so you can rotate with zero downtime [1].
+
+1. In **Admin → API Keys**, select the key and choose **Generate successor**. The original key stays active [1].
+2. Deploy the new key to your integrations. Both keys are accepted during the overlap window [1].
+3. Confirm traffic moved: the key's \`Last used\` timestamp updates within ~60 seconds [2].
+4. Once the old key shows no recent use, click **Revoke predecessor** [1].
+
+The default overlap window is **30 days**, capped at 90 [3].`;
+
 export const SEED_TURNS: readonly Turn[] = [
   {
     id: "seed-1",
@@ -11,14 +23,8 @@ export const SEED_TURNS: readonly Turn[] = [
     answer: {
       kind: "answer",
       tier: "nano",
-      html: `<p>Northwind supports overlapping keys so you can rotate with zero downtime. Follow these steps:<a class="cite" href="#">1</a></p>
-        <ol>
-          <li>In <strong>Admin → API Keys</strong>, select the key and choose <strong>Generate successor</strong>. The original key stays active.<a class="cite" href="#">1</a></li>
-          <li>Deploy the new key to your integrations. Both keys are accepted during the overlap window.<a class="cite" href="#">1</a></li>
-          <li>Confirm traffic moved: the key's <code>Last used</code> timestamp updates within ~60 seconds.<a class="cite" href="#">2</a></li>
-          <li>Once the old key shows no recent use, click <strong>Revoke predecessor</strong>.<a class="cite" href="#">1</a></li>
-        </ol>
-        <p>The default overlap window is <strong>30 days</strong>, capped at 90.<a class="cite" href="#">3</a></p>`,
+      markdown: SEED_MARKDOWN,
+      html: renderMarkdown(SEED_MARKDOWN),
       sources: [
         {
           index: 1,

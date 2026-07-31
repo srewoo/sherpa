@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # Types first: a type error makes every downstream failure noise.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Includes the eval gate (Recall@5 ≥ 0.85, false-answer ≤ 0.03) and the
+      # retrieval perf budget — PRD §7.2/7.3/7.6.
+      - name: Unit tests, eval gate and perf budgets
+        run: npm test
+
+      # Proves the extension actually bundles, including the vendored ONNX
+      # runtime that the offscreen document needs at runtime.
+      - name: Build extension
+        run: npm run build
+
+      - name: Check the bundle is self-contained
+        run: node scripts/verify-bundle.mjs

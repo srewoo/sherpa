@@ -37,6 +37,24 @@ describe("chunkPage", () => {
   });
 
   it("never straddles a heading boundary", () => {
+    // Sections must be long enough that the page as a whole clears the
+    // small-page merge threshold (5.4.6) — otherwise the correct behaviour is
+    // to collapse it, which the merge tests below cover.
+    const blocks: Block[] = [
+      { type: "heading", level: 2, text: "A", anchor: "a" },
+      para(`Alpha body. ${longProse(40)}`),
+      { type: "heading", level: 2, text: "B", anchor: "b" },
+      para(`Beta body. ${longProse(40)}`),
+    ];
+    const chunks = chunkPage(blocks, ctx);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    expect(chunks[0]?.body).toContain("Alpha");
+    expect(chunks[0]?.body).not.toContain("Beta");
+    const beta = chunks.find((c) => c.body.includes("Beta"));
+    expect(beta?.anchor).toBe("b");
+  });
+
+  it("merges a whole small page into one chunk instead of fragments (5.4.6)", () => {
     const blocks: Block[] = [
       { type: "heading", level: 2, text: "A", anchor: "a" },
       para("Alpha body."),
@@ -44,10 +62,22 @@ describe("chunkPage", () => {
       para("Beta body."),
     ];
     const chunks = chunkPage(blocks, ctx);
-    expect(chunks).toHaveLength(2);
+    expect(chunks).toHaveLength(1);
+    // Both sections survive, and the chunk is labelled with the page itself.
     expect(chunks[0]?.body).toContain("Alpha");
-    expect(chunks[1]?.body).toContain("Beta");
-    expect(chunks[1]?.anchor).toBe("b");
+    expect(chunks[0]?.body).toContain("Beta");
+    expect(chunks[0]?.headingPath).toBe("Admin > SSO > SSO Setup");
+  });
+
+  it("leaves a page above the merge threshold split", () => {
+    const blocks: Block[] = [
+      { type: "heading", level: 2, text: "A", anchor: "a" },
+      para(longProse(60)),
+      { type: "heading", level: 2, text: "B", anchor: "b" },
+      para(longProse(60)),
+    ];
+    expect(estimateTokens(longProse(120))).toBeGreaterThan(DEFAULT_CHUNK_OPTIONS.mergeBelow);
+    expect(chunkPage(blocks, ctx).length).toBeGreaterThan(1);
   });
 
   it("never splits an atomic block and keeps it intact", () => {

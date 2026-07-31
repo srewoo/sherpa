@@ -51,11 +51,39 @@ function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number, transaction: Up
   }
 }
 
+/**
+ * One connection per context, reused. Held so it can be closed on demand —
+ * `indexedDB.deleteDatabase` blocks indefinitely while any connection is open,
+ * which is what made "delete everything" silently do nothing (PRD 5.10.6).
+ */
+let open: { name: string; db: Promise<SherpaDatabase> } | null = null;
+
 /** Open (and migrate) the Sherpa database. */
 export function openSherpaDb(name = DB_NAME): Promise<SherpaDatabase> {
-  return openDB<SherpaDB>(name, DB_VERSION, {
-    upgrade(db, oldVersion, _newVersion, transaction) {
-      migrate(db, oldVersion, transaction);
+  if (open?.name === name) return open.db;
+
+  const db = openDB<SherpaDB>(name, DB_VERSION, {
+    upgrade(database, oldVersion, _newVersion, transaction) {
+      migrate(database, oldVersion, transaction);
     },
+    terminated() {
+      // Connection lost (tab discarded, storage cleared) — drop the cache so
+      // the next call reopens rather than handing back a dead handle.
+      if (open?.name === name) open = null;
+    },
+  }).catch((err: unknown) => {
+    if (open?.name === name) open = null;
+    throw err;
   });
+
+  open = { name, db };
+  return db;
+}
+
+/** Close this context's connection so the database can be deleted. */
+export async function closeSherpaDb(): Promise<void> {
+  const current = open;
+  open = null;
+  if (!current) return;
+  await current.db.then((db) => db.close()).catch(() => {});
 }
