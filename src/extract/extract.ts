@@ -6,6 +6,7 @@
  * so it runs in the offscreen doc and under linkedom in tests.
  */
 
+import { Readability } from "@mozilla/readability";
 import type { Block } from "@/domain/content.js";
 import { detectPlatform, profileFor, type Platform } from "./profiles.js";
 
@@ -31,12 +32,67 @@ function clean(s: string | null | undefined): string {
   return (s ?? "").replace(/\s+/g, " ").trim();
 }
 
-function pickRoot(doc: Document, selectors: readonly string[]): Element {
+function pickRoot(doc: Document, selectors: readonly string[]): Element | null {
   for (const sel of selectors) {
     const el = doc.querySelector(sel);
     if (el) return el;
   }
-  return doc.body;
+  return null;
+}
+
+/** Words of visible text, used to compare candidate content roots. */
+function textWeight(el: Element): number {
+  const t = (el.textContent ?? "").trim();
+  return t === "" ? 0 : t.split(/\s+/).length;
+}
+
+/**
+ * Choose the element to extract from (PRD 5.3.1).
+ *
+ * Readability is the base extractor: it is far better than a selector list at
+ * finding the article on an unfamiliar template. But it also rewrites the DOM
+ * it returns, and we need the *original* nodes to preserve code blocks, tables
+ * and list nesting (5.3.3–5.3.5), so we use it as a locator rather than a
+ * renderer — parse a throwaway clone, then map its article back onto the real
+ * document. A platform profile, when one matched, wins outright; it was written
+ * for exactly this template. Readability's own output is the fallback when
+ * neither finds anything substantial.
+ */
+function pickContentRoot(doc: Document, selectors: readonly string[]): Element {
+  const profiled = pickRoot(doc, selectors);
+  if (profiled && textWeight(profiled) > 0) return profiled;
+
+  const article = readabilityRoot(doc);
+  if (article && textWeight(article) > 0) return article;
+
+  return profiled ?? doc.body;
+}
+
+/**
+ * Run Readability over a clone and re-find the same region in the live
+ * document. Returns null when Readability declines the page (very short pages,
+ * link farms) or when the environment can't clone — extraction then falls back
+ * to the profile selectors, which is the pre-Readability behaviour.
+ */
+function readabilityRoot(doc: Document): Element | null {
+  try {
+    const clone = doc.cloneNode(true) as Document;
+    const parsed = new Readability(clone, { keepClasses: true }).parse();
+    if (!parsed?.content) return null;
+
+    // Readability wraps the article; find the id/class it kept so we can locate
+    // the corresponding live node and keep its untouched markup.
+    const marker = /<div[^>]*\bid=["']([^"']+)["']/i.exec(parsed.content)?.[1];
+    if (marker) {
+      const live = doc.getElementById(marker);
+      if (live) return live;
+    }
+    // No usable handle: fall back to the densest of the usual article wrappers.
+    const candidates = [...doc.querySelectorAll("article, main, [role='main'], .content, #content")];
+    return candidates.sort((a, b) => textWeight(b) - textWeight(a))[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Reveal collapsed content so it's indexed too (PRD 5.3.8). */
@@ -131,7 +187,9 @@ export function extractPage(doc: Document, baseUrl: string, platform?: Platform)
     undefined;
 
   const breadcrumb = breadcrumbOf(doc);
-  const root = pickRoot(doc, profile.rootSelectors);
+  // Breadcrumbs come from the full document — Readability and the platform
+  // profiles both strip the nav they live in.
+  const root = pickContentRoot(doc, profile.rootSelectors);
   stripJunk(root, profile.junkSelectors);
   expandCollapsed(root);
 

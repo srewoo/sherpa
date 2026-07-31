@@ -1,7 +1,12 @@
 /**
  * On-device embedding via transformers.js (PRD 5.5.1). all-MiniLM-L6-v2, 384-d,
- * mean-pooled and L2-normalised. Tries WebGPU first and falls back to WASM.
- * Model weights download once and are cached by the browser (5.5.8).
+ * mean-pooled and L2-normalised.
+ *
+ * Everything is local. The ONNX runtime's WASM binaries and the model weights
+ * both ship inside the extension (see scripts/copy-ort.mjs and
+ * scripts/fetch-model.mjs), because MV3 treats CDN-loaded WASM as remote code
+ * and because PRD 5.10.1 promises zero egress in the default configuration —
+ * once installed, embedding makes no network request at all.
  *
  * Browser-only (no unit test): it loads a real model. The pooling/normalisation
  * it relies on is exercised through vecmath.test.ts.
@@ -12,6 +17,13 @@ import { EMBED_DIM } from "./vecmath.js";
 
 const MODEL = "Xenova/all-MiniLM-L6-v2";
 
+/** Resolve a bundled asset to its chrome-extension:// URL. */
+function assetUrl(path: string): string {
+  return typeof chrome !== "undefined" && chrome.runtime?.getURL
+    ? chrome.runtime.getURL(path)
+    : `/${path}`;
+}
+
 export interface Embedder {
   readonly dim: number;
   /** Returns a flat Float32Array of `texts.length * dim` normalised values. */
@@ -21,19 +33,25 @@ export interface Embedder {
 let cached: Promise<Embedder> | null = null;
 
 /** Process-wide embedder, shared by crawl indexing and query retrieval so the
- * model loads (and downloads) only once. */
+ * model loads only once (5.5.8). */
 export function getEmbedder(): Promise<Embedder> {
   if (!cached) cached = createEmbedder();
   return cached;
 }
 
 export async function createEmbedder(): Promise<Embedder> {
-  // Prefer remote weights cached via the Cache API rather than bundling them.
-  // NOTE: transformers.js v2 runs on WASM; the WebGPU backend (PRD 5.5.1) is a
-  // v3 upgrade — swap this line for the @huggingface/transformers `{ device }`
-  // option when we bump the dependency.
-  env.allowLocalModels = false;
-  const extractor = await pipeline("feature-extraction", MODEL);
+  // Serve weights from the bundled copy, never from the Hugging Face CDN.
+  env.allowRemoteModels = false;
+  env.allowLocalModels = true;
+  env.localModelPath = assetUrl("models/");
+  // Same for the ONNX runtime itself — without this, transformers.js pulls its
+  // .wasm from jsdelivr, which MV3 blocks as remote code.
+  env.backends.onnx.wasm.wasmPaths = assetUrl("ort/");
+  // Threading needs SharedArrayBuffer + COOP/COEP, which extension pages don't
+  // have; single-threaded SIMD is the correct build here.
+  env.backends.onnx.wasm.numThreads = 1;
+
+  const extractor = await pipeline("feature-extraction", MODEL, { quantized: true });
 
   return {
     dim: EMBED_DIM,

@@ -19,10 +19,20 @@ export const browserFetch: Fetcher = async (url) => {
       html: isHtml ? await res.text() : null,
       etag: res.headers.get("etag") ?? undefined,
       lastmod: res.headers.get("last-modified") ?? undefined,
+      // Carried through so the engine can honour `noindex` (PRD 5.2.4).
+      robotsTag: res.headers.get("x-robots-tag") ?? undefined,
     };
   } catch {
     // Network error / blocked host → status 0, treated as a failure by the engine.
-    return { url, finalUrl: url, status: 0, html: null, etag: undefined, lastmod: undefined };
+    return {
+      url,
+      finalUrl: url,
+      status: 0,
+      html: null,
+      etag: undefined,
+      lastmod: undefined,
+      robotsTag: undefined,
+    };
   }
 };
 

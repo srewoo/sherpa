@@ -4,12 +4,16 @@
  * ordered.
  */
 
-import { openDB, type IDBPDatabase } from "idb";
+import { openDB, type IDBPDatabase, type IDBPTransaction, type StoreNames } from "idb";
 import { DB_NAME, DB_VERSION, type SherpaDB } from "./schema.js";
 
 export type SherpaDatabase = IDBPDatabase<SherpaDB>;
 
-function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number): void {
+/** The transaction handed to `upgrade` — the only place existing stores can
+ * gain new indexes. */
+type UpgradeTx = IDBPTransaction<SherpaDB, StoreNames<SherpaDB>[], "versionchange">;
+
+function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number, transaction: UpgradeTx): void {
   if (oldVersion < 1) {
     db.createObjectStore("indexRegistry", { keyPath: "id" });
 
@@ -18,11 +22,13 @@ function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number): void {
 
     const pages = db.createObjectStore("pages", { keyPath: ["indexId", "url"] });
     pages.createIndex("byIndex", "indexId");
+    pages.createIndex("byHash", ["indexId", "htmlHash"]);
 
     const chunks = db.createObjectStore("chunks", {
       keyPath: ["indexId", "vectorId"],
     });
     chunks.createIndex("byIndex", "indexId");
+    chunks.createIndex("byUrl", ["indexId", "url"]);
 
     db.createObjectStore("vectors", { keyPath: ["indexId", "shard"] });
     db.createObjectStore("bm25", { keyPath: "indexId" });
@@ -33,13 +39,23 @@ function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number): void {
     const log = db.createObjectStore("queryLog", { keyPath: "id", autoIncrement: true });
     log.createIndex("byIndex", "indexId");
   }
+  if (oldVersion < 3) {
+    // Content-hash dedupe (PRD 5.2.7) needs a lookup by (indexId, htmlHash);
+    // neighbour expansion (5.7.5) reads by page rather than scanning the index.
+    // Guarded because a fresh database already got both in the v1 block above.
+    const pages = transaction.objectStore("pages");
+    if (!pages.indexNames.contains("byHash")) pages.createIndex("byHash", ["indexId", "htmlHash"]);
+
+    const chunks = transaction.objectStore("chunks");
+    if (!chunks.indexNames.contains("byUrl")) chunks.createIndex("byUrl", ["indexId", "url"]);
+  }
 }
 
 /** Open (and migrate) the Sherpa database. */
 export function openSherpaDb(name = DB_NAME): Promise<SherpaDatabase> {
   return openDB<SherpaDB>(name, DB_VERSION, {
-    upgrade(db, oldVersion) {
-      migrate(db, oldVersion);
+    upgrade(db, oldVersion, _newVersion, transaction) {
+      migrate(db, oldVersion, transaction);
     },
   });
 }

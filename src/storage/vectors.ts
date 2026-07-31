@@ -91,6 +91,12 @@ export const vectorStore = {
     return shards.reduce((n, s) => n + s.count, 0);
   },
 
+  /** Bytes actually occupied by this index's vector shards (PRD 5.6.1). */
+  async byteSize(db: SherpaDatabase, indexId: string): Promise<number> {
+    const shards = await allShards(db, indexId);
+    return shards.reduce((n, s) => n + s.data.byteLength, 0);
+  },
+
   async delete(db: SherpaDatabase, indexId: string): Promise<void> {
     const range = IDBKeyRange.bound([indexId, 0], [indexId, Number.MAX_SAFE_INTEGER]);
     await db.delete("vectors", range);

@@ -5,8 +5,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "node scripts/copy-ort.mjs && vite",
+    "build": "node scripts/copy-ort.mjs && tsc --noEmit && vite build",
+    "fetch:model": "node scripts/fetch-model.mjs",
+    "bench": "vitest run --config vitest.bench.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

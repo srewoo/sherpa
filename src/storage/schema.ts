@@ -7,7 +7,20 @@ import type { DBSchema } from "idb";
 import type { IndexMeta, StoredChunk, StoredPage } from "@/domain/records.js";
 
 export const DB_NAME = "sherpa";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
+
+/**
+ * The crawl in flight, persisted so it survives the offscreen document being
+ * torn down or the whole browser restarting (PRD 5.2.2). The frontier holds the
+ * queue; this holds which index that queue belongs to.
+ */
+export interface ActiveCrawl {
+  readonly indexId: string;
+  readonly incremental: boolean;
+  /** True when the user paused, or an auth wall stopped us. */
+  readonly paused: boolean;
+  readonly startedAt: number;
+}
 
 /** Vectors are stored as sharded ArrayBuffer blobs, not one row per vector
  * (5.5.2). ~5k vectors per shard keeps per-read cost flat at 15k+ chunks. */
@@ -59,12 +72,16 @@ export interface SherpaDB extends DBSchema {
   pages: {
     key: [string, string];
     value: StoredPage;
-    indexes: { byIndex: string };
+    /** `byHash` backs content-hash dedupe — help sites serve the same article
+     * on many URLs (PRD 5.2.7). */
+    indexes: { byIndex: string; byHash: [string, string] };
   };
   chunks: {
     key: [string, number];
     value: StoredChunk;
-    indexes: { byIndex: string };
+    /** `byUrl` makes neighbour expansion (5.7.5) a keyed range read instead of
+     * a scan over every chunk in the index. */
+    indexes: { byIndex: string; byUrl: [string, string] };
   };
   vectors: { key: [string, number]; value: VectorShard };
   bm25: { key: string; value: Bm25Blob };

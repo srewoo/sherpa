@@ -40,10 +40,16 @@ function highlightUrl(chunk: RetrievedChunk): string {
   return `${chunk.url}#:~:text=${encodeURIComponent(words)}`;
 }
 
-/** Map a retrieved chunk to a source card. */
-export function chunkToSource(chunk: RetrievedChunk, index: number): WireSource {
+/**
+ * Map a retrieved chunk to a source card.
+ *
+ * `position` is the 0-based array index; citations are 1-based so the card
+ * numbers line up with the `[n]` markers the grounding prompt asks the model to
+ * emit (see prompt.ts, which numbers the same context from 1).
+ */
+export function chunkToSource(chunk: RetrievedChunk, position: number): WireSource {
   return {
-    index,
+    index: position + 1,
     title: chunk.title || chunk.headingPath || "Untitled",
     breadcrumb: chunk.headingPath.replace(/ > /g, " › "),
     snippet: chunk.body.slice(0, 200).trim() + (chunk.body.length > 200 ? "…" : ""),

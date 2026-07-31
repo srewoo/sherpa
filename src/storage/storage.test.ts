@@ -50,11 +50,19 @@ function chunk(indexId: string, vectorId: number, url: string, position: number)
 }
 
 describe("db migration", () => {
-  it("creates every object store at v1", async () => {
+  it("creates every object store at the current schema version", async () => {
     const db = await freshDb();
     expect([...db.objectStoreNames].sort()).toEqual(
-      ["bm25", "chunks", "frontier", "indexRegistry", "meta", "pages", "vectors"],
+      ["bm25", "chunks", "frontier", "indexRegistry", "meta", "pages", "queryLog", "vectors"],
     );
+  });
+
+  it("creates the indexes retrieval and dedupe depend on", async () => {
+    const db = await freshDb();
+    const tx = db.transaction(["pages", "chunks"], "readonly");
+    expect([...tx.objectStore("pages").indexNames].sort()).toEqual(["byHash", "byIndex"]);
+    expect([...tx.objectStore("chunks").indexNames].sort()).toEqual(["byIndex", "byUrl"]);
+    await tx.done;
   });
 });
 

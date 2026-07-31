@@ -4,6 +4,7 @@
  */
 
 import type { CrawlConfig } from "@/domain/config.js";
+import type { CrawlPreview } from "@/crawl/preview.js";
 import type { PanelEvent } from "@/shared/answer.js";
 
 export interface CrawlProgress {
@@ -20,7 +21,11 @@ export interface CrawlProgress {
 
 export type Message =
   | { readonly type: "crawl/start"; readonly config: CrawlConfig }
+  /** Dry run: discover + count + estimate, fetch nothing (PRD 5.1.4). */
+  | { readonly type: "crawl/preview"; readonly requestId: string; readonly config: CrawlConfig }
+  | { readonly type: "crawl/preview-result"; readonly requestId: string; readonly preview: CrawlPreview | null; readonly error?: string }
   | { readonly type: "crawl/recrawl"; readonly indexId: string }
+  | { readonly type: "crawl/recrawl-full"; readonly indexId: string }
   | { readonly type: "crawl/pause" }
   | { readonly type: "crawl/resume" }
   | { readonly type: "crawl/progress"; readonly progress: CrawlProgress }

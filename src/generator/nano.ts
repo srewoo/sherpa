@@ -7,6 +7,7 @@
 
 import type { AnswerChunk, AnswerGenerator, AnswerRequest, TierAvailability } from "@/domain/generator.js";
 import { buildGroundedPrompt } from "./prompt.js";
+import { packContext, NANO_PACK } from "./context.js";
 
 export class NanoGenerator implements AnswerGenerator {
   readonly tier = "nano" as const;
@@ -22,9 +23,12 @@ export class NanoGenerator implements AnswerGenerator {
     if (typeof LanguageModel === "undefined") {
       throw new Error("Nano unavailable");
     }
+    // Nano's window is small: keep the best few chunks within a token budget
+    // rather than sending everything retrieval expanded (PRD 5.8.5).
+    const context = packContext(req.context, NANO_PACK);
     const session = await LanguageModel.create();
     try {
-      const stream = session.promptStreaming(buildGroundedPrompt(req.query, req.context));
+      const stream = session.promptStreaming(buildGroundedPrompt(req.query, context));
       for await (const piece of stream) yield { delta: piece };
     } finally {
       session.destroy();

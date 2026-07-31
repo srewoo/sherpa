@@ -11,6 +11,8 @@ export interface FetchResult {
   readonly html: string | null;
   readonly etag: string | undefined;
   readonly lastmod: string | undefined;
+  /** `X-Robots-Tag` header verbatim, when present (PRD 5.2.4). */
+  readonly robotsTag?: string | undefined;
 }
 
 /** A blocked-on-auth signal surfaced to the UI (PRD 5.2.8). */

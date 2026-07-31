@@ -35,15 +35,33 @@ export interface Cluster {
   score: number; // running sum of topScores
 }
 
-/** Greedy single-pass clustering: each query joins the first cluster whose
- * representative is similar enough, else seeds a new one. */
+/**
+ * Greedy single-link clustering: a query joins the cluster it most resembles,
+ * compared against *every* member rather than only the representative.
+ *
+ * Comparing to the representative alone splits obvious topics — "how to reset
+ * password" and "reset the password now" share only 0.33 with each other but
+ * both sit comfortably above the threshold against "reset password steps", so
+ * they belong together. Single-link is what makes the chain hold.
+ */
 export function clusterFailures(failed: readonly QueryStat[], threshold = 0.34): Cluster[] {
   const clusters: Cluster[] = [];
+
   for (const f of failed) {
-    const home = clusters.find((c) => jaccard(c.representative, f.query) >= threshold);
-    if (home) {
-      home.queries.push(f.query);
-      home.score += f.topScore;
+    let best: Cluster | undefined;
+    let bestScore = threshold;
+
+    for (const c of clusters) {
+      const similarity = Math.max(...c.queries.map((q) => jaccard(q, f.query)));
+      if (similarity >= bestScore) {
+        best = c;
+        bestScore = similarity;
+      }
+    }
+
+    if (best) {
+      best.queries.push(f.query);
+      best.score += f.topScore;
     } else {
       clusters.push({ representative: f.query, queries: [f.query], score: f.topScore });
     }

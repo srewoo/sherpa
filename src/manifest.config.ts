@@ -38,6 +38,22 @@ export default defineManifest({
   options_page: "src/options/index.html",
   permissions: ["storage", "unlimitedStorage", "sidePanel", "offscreen", "tabs", "scripting"],
   optional_host_permissions: ["http://*/*", "https://*/*"],
+  /**
+   * onnxruntime-web compiles the embedding model to WebAssembly, which MV3's
+   * default CSP blocks outright. `wasm-unsafe-eval` is the narrow opt-in for
+   * that and grants nothing else; script-src stays 'self', so no remote code
+   * can load (5.10.1). The WASM binaries and model weights are bundled under
+   * web_accessible_resources rather than fetched from a CDN.
+   */
+  content_security_policy: {
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+  },
+  web_accessible_resources: [
+    {
+      resources: ["ort/*", "models/*"],
+      matches: ["<all_urls>"],
+    },
+  ],
   commands: {
     "open-sherpa": {
       suggested_key: { default: "Ctrl+Shift+K", mac: "Command+Shift+K" },

@@ -163,6 +163,38 @@ export function chunkPage(
 
   if (bufTokens > 0) flush("");
 
-  // Small-page merge: a lone sub-threshold fragment stays as the single chunk.
-  return drafts;
+  return mergeSmallPage(drafts, ctx, opts);
+}
+
+/**
+ * Small-page merge (PRD 5.4.6). Heading boundaries mean a short page — an FAQ
+ * entry, a stub, a "see also" — comes out as several tiny fragments, each too
+ * thin to retrieve well and each costing a vector. When the whole page fits
+ * under `mergeBelow`, collapse it into one chunk that carries the page's own
+ * heading path.
+ */
+function mergeSmallPage(
+  drafts: readonly ChunkDraft[],
+  ctx: PageContext,
+  opts: ChunkOptions,
+): ChunkDraft[] {
+  if (drafts.length <= 1) return [...drafts];
+
+  const body = drafts.map((d) => d.body).join("\n\n");
+  if (estimateTokens(body) >= opts.mergeBelow) return [...drafts];
+
+  // Prefer the page's breadcrumb + title as the path; fall back to the first
+  // chunk's heading path when the page has no breadcrumb.
+  const path = [...ctx.breadcrumb, ctx.title].filter(Boolean).join(" > ") || (drafts[0]?.headingPath ?? "");
+  const prefix = path ? `${path}:\n` : "";
+
+  return [
+    {
+      text: `${prefix}${body}`,
+      body,
+      headingPath: path,
+      anchor: drafts[0]?.anchor,
+      position: 0,
+    },
+  ];
 }

@@ -33,15 +33,33 @@ export const chunkStore = {
     return db.countFromIndex("chunks", "byIndex", indexId);
   },
 
+  listByIndex(db: SherpaDatabase, indexId: string): Promise<StoredChunk[]> {
+    return db.getAllFromIndex("chunks", "byIndex", indexId);
+  },
+
+  /** Approximate stored size of this index's chunk text (PRD 5.6.1). UTF-16 in
+   * memory, but IndexedDB stores UTF-8, so one byte per char is the honest
+   * lower bound for mostly-ASCII documentation. */
+  async byteSize(db: SherpaDatabase, indexId: string): Promise<number> {
+    const chunks = await this.listByIndex(db, indexId);
+    return chunks.reduce((n, c) => n + c.text.length + c.body.length + c.url.length + c.headingPath.length, 0);
+  },
+
   /** Remove all chunks of one page (its vectors are left orphaned but resolve
    * to nothing, so retrieval skips them). Used by incremental recrawl (5.6.5). */
   async deleteByUrl(db: SherpaDatabase, indexId: string, url: string): Promise<void> {
     const tx = db.transaction("chunks", "readwrite");
-    const index = tx.store.index("byIndex");
-    for (const c of await index.getAll(indexId)) {
-      if (c.url === url) await tx.store.delete([indexId, c.vectorId]);
+    const range = IDBKeyRange.only([indexId, url]);
+    for (const c of await tx.store.index("byUrl").getAll(range)) {
+      await tx.store.delete([indexId, c.vectorId]);
     }
     await tx.done;
+  },
+
+  /** Every chunk of one page, in document order. */
+  async listByUrl(db: SherpaDatabase, indexId: string, url: string): Promise<StoredChunk[]> {
+    const rows = await db.getAllFromIndex("chunks", "byUrl", IDBKeyRange.only([indexId, url]));
+    return rows.sort((a, b) => a.position - b.position);
   },
 
   /**
@@ -58,9 +76,7 @@ export const chunkStore = {
       wanted.add(chunk.position - d);
       wanted.add(chunk.position + d);
     }
-    const same = await db.getAllFromIndex("chunks", "byIndex", chunk.indexId);
-    return same
-      .filter((c) => c.url === chunk.url && wanted.has(c.position))
-      .sort((a, b) => a.position - b.position);
+    const same = await this.listByUrl(db, chunk.indexId, chunk.url);
+    return same.filter((c) => wanted.has(c.position));
   },
 };

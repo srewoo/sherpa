@@ -25,13 +25,35 @@ interface Posting {
   readonly tf: number;
 }
 
+/** On-disk form of a built index (PRD 5.5.4). */
+export interface Bm25Snapshot {
+  /** term → [docId, tf, docId, tf, …], flat to keep the JSON small. */
+  readonly postings: Record<string, number[]>;
+  readonly docLen: [number, number][];
+}
+
 export class Bm25Index {
   private readonly postings = new Map<string, Posting[]>();
   private readonly docLen = new Map<number, number>();
   private readonly n: number;
   private readonly avgdl: number;
 
-  constructor(docs: readonly Bm25Doc[]) {
+  constructor(docs: readonly Bm25Doc[], snapshot?: Bm25Snapshot) {
+    if (snapshot) {
+      for (const [term, flat] of Object.entries(snapshot.postings)) {
+        const list: Posting[] = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) {
+          list.push({ id: flat[i]!, tf: flat[i + 1]! });
+        }
+        this.postings.set(term, list);
+      }
+      for (const [id, len] of snapshot.docLen) this.docLen.set(id, len);
+      this.n = this.docLen.size;
+      const restored = [...this.docLen.values()].reduce((a, b) => a + b, 0);
+      this.avgdl = this.n > 0 ? restored / this.n : 0;
+      return;
+    }
+
     for (const doc of docs) {
       const tokens = tokenize(doc.text);
       this.docLen.set(doc.id, tokens.length);
@@ -46,6 +68,22 @@ export class Bm25Index {
     this.n = this.docLen.size;
     const total = [...this.docLen.values()].reduce((a, b) => a + b, 0);
     this.avgdl = this.n > 0 ? total / this.n : 0;
+  }
+
+  /** Serialisable form, so the index is built once at crawl time rather than
+   * rebuilt from every chunk on every query (PRD 5.5.4, 5.7.6). */
+  toSnapshot(): Bm25Snapshot {
+    const postings: Record<string, number[]> = {};
+    for (const [term, list] of this.postings) {
+      const flat: number[] = [];
+      for (const p of list) flat.push(p.id, p.tf);
+      postings[term] = flat;
+    }
+    return { postings, docLen: [...this.docLen.entries()] };
+  }
+
+  static fromSnapshot(snapshot: Bm25Snapshot): Bm25Index {
+    return new Bm25Index([], snapshot);
   }
 
   private idf(term: string): number {
