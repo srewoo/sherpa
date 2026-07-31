@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sherpa — Design overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="gallery">
+
+  <!-- Hero -->
+  <div class="gallery-hero">
+    <div>
+      <div class="brand mb-3">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:32px; height:32px;"><path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z"/><path d="M8 20 L11 14.5"/></svg>
+        <span class="brand-name" style="font-size:18px;">Sherpa</span>
+      </div>
+      <h1>Design overview</h1>
+      <p>A local-first help-site answer engine for Chrome. Crawls a documentation site in-browser, indexes it on-device, and answers questions with a citation on every reply — zero servers, zero telemetry. Every screen below shares one stylesheet.</p>
+    </div>
+    <div class="stack-2" style="display:flex; flex-direction:column; text-align:right;">
+      <span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> On-device · zero egress</span>
+      <span class="badge badge-terra"><span class="dot dot-terra"></span> Warm editorial system</span>
+    </div>
+  </div>
+
+  <!-- Palette + type reference -->
+  <div class="card mb-5">
+    <div class="card-body">
+      <div class="row-between wrap gap-4" style="align-items:flex-start;">
+        <div>
+          <div class="eyebrow mb-3">Palette</div>
+          <div class="row wrap gap-3">
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#B4532E; border:1px solid var(--border-strong);"></span><span class="meta">terracotta</span></span>
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#2F6B4F; border:1px solid var(--border-strong);"></span><span class="meta">forest</span></span>
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#C08A2D; border:1px solid var(--border-strong);"></span><span class="meta">amber</span></span>
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#A23B2B; border:1px solid var(--border-strong);"></span><span class="meta">danger</span></span>
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#23201C; border:1px solid var(--border-strong);"></span><span class="meta">ink</span></span>
+            <span class="row gap-2"><span style="width:22px; height:22px; border-radius:6px; background:#FBF9F5; border:1px solid var(--border-strong);"></span><span class="meta">paper</span></span>
+          </div>
+        </div>
+        <div>
+          <div class="eyebrow mb-3">Type</div>
+          <div class="row gap-4" style="align-items:baseline;">
+            <span style="font-family:var(--font-ui); font-size:18px; font-weight:600;">Inter — UI</span>
+            <span class="serif" style="font-size:18px;">Georgia — answers</span>
+            <span class="mono" style="font-size:14px;">SF Mono — URLs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SIDE PANEL ===================== -->
+  <div class="gallery-section-title">Side panel · 400px</div>
+  <div class="frames panel-frames">
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Chat — empty state</span></span><a href="panel-chat-empty.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="panel-chat-empty.html" height="820" title="Chat empty state" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Chat — answer with sources</span></span><a href="panel-chat-answer.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="panel-chat-answer.html" height="820" title="Chat answer with sources" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Chat — not in index (refusal)</span></span><a href="panel-chat-refusal.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="panel-chat-refusal.html" height="820" title="Chat refusal" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Authentication required</span> <span class="d">session/cookie · primary</span></span><a href="panel-auth-required.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="panel-auth-required.html" height="820" title="Authentication required" loading="lazy"></iframe></div>
+    </div>
+
+  </div>
+
+  <!-- ===================== FULL TAB ===================== -->
+  <div class="gallery-section-title">Full tab · options surfaces</div>
+  <div class="frames tab-frames">
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Onboarding</span> <span class="d">Scope → Crawl &amp; index → Answering</span></span><a href="onboarding.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="onboarding.html" height="2600" title="Onboarding" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Crawl configuration</span> <span class="d">platform detect · patterns · politeness</span></span><a href="crawl-setup.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="crawl-setup.html" height="1240" title="Crawl setup" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Index management</span> <span class="d">freshness · refresh · delete</span></span><a href="index-management.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="index-management.html" height="1100" title="Index management" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Settings</span> <span class="d">privacy · permissions · BYOK · delete all</span></span><a href="settings.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="settings.html" height="1720" title="Settings" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Content gap report</span> <span class="d">clustered failed queries · export</span></span><a href="gap-report.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="gap-report.html" height="1200" title="Gap report" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">HTTP Basic Auth</span> <span class="d">credential form · secondary</span></span><a href="auth-basic.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="auth-basic.html" height="640" title="Basic auth" loading="lazy"></iframe></div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap"><span><span class="t">Edge &amp; error states</span> <span class="d">auth · quota · empty · aborted · downloads</span></span><a href="states.html" target="_blank">Open ↗</a></div>
+      <div class="frame-embed"><iframe src="states.html" height="1500" title="Edge states" loading="lazy"></iframe></div>
+    </div>
+
+  </div>
+
+  <p class="meta" style="text-align:center; margin-top:48px;">Sherpa · static HTML/CSS mockups · one shared <span class="mono">styles.css</span></p>
+
+</div>
+</body>
+</html>

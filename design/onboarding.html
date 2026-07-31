@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sherpa — Set up your index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-tab">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z"/><path d="M8 20 L11 14.5"/></svg>
+        <span class="brand-name">Sherpa</span>
+      </div>
+      <span class="badge badge-neutral">First-time setup</span>
+    </div>
+  </header>
+
+  <main class="page page-narrow">
+
+    <div class="page-header">
+      <h1>Index a help site</h1>
+      <p>Sherpa crawls a documentation site as you — reaching anything you can see when signed in — and builds a private, searchable index that lives only on this device.</p>
+    </div>
+
+    <!-- Step indicator -->
+    <div class="steps" style="margin-bottom:32px;">
+      <div class="step active"><span class="step-num">1</span><span class="step-label">Scope</span></div>
+      <span class="step-line"></span>
+      <div class="step"><span class="step-num">2</span><span class="step-label">Crawl &amp; index</span></div>
+      <span class="step-line"></span>
+      <div class="step"><span class="step-num">3</span><span class="step-label">Answering</span></div>
+    </div>
+
+    <!-- ===================== STEP 1 — SCOPE ===================== -->
+    <section class="card mb-5">
+      <div class="card-head">
+        <div class="row gap-3">
+          <span class="section-tag" style="margin:0;"><span class="n">1</span></span>
+          <div><h2>Scope the crawl</h2></div>
+        </div>
+        <span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> sitemap.xml discovered</span>
+      </div>
+      <div class="card-body stack-5">
+
+        <div class="field">
+          <label for="root">Crawl root</label>
+          <div class="input-group">
+            <span class="input-affix pre">https://</span>
+            <input class="input mono" id="root" value="docs.northwind.com/" style="border-radius:0 var(--r-sm) var(--r-sm) 0;">
+          </div>
+          <span class="help">Detected from your current tab. Sherpa will stay within this path.</span>
+          <div class="notice notice-amber" style="margin-top:4px;">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="1.6"/><path d="M12 12.6V14.6"/></svg>
+            <span>This site appears to require sign-in — you'll be prompted to authenticate during the crawl. Sherpa fetches pages as you, over your existing browser session.</span>
+          </div>
+        </div>
+
+        <!-- Discovery summary -->
+        <div class="grid-3">
+          <div class="stat">
+            <div class="k">Pages discovered</div>
+            <div class="v num">1,847</div>
+          </div>
+          <div class="stat">
+            <div class="k">Estimated crawl time</div>
+            <div class="v num">~14<small> min</small></div>
+          </div>
+          <div class="stat">
+            <div class="k">Estimated on disk</div>
+            <div class="v num">41<small> MB</small></div>
+          </div>
+        </div>
+        <p class="help" style="margin-top:-8px;">From <span class="mono">sitemap.xml</span> (1,812 URLs) plus 35 pages found by link discovery. Estimate refines during the crawl.</p>
+
+        <!-- Include / exclude -->
+        <div class="field">
+          <div class="label-row">
+            <label>Include &amp; exclude patterns</label>
+            <button class="btn btn-sm btn-ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Add pattern</button>
+          </div>
+          <div class="card" style="box-shadow:none;">
+            <table class="table">
+              <thead><tr><th style="width:70px;">Rule</th><th>Pattern</th><th>Matches</th><th style="width:60px;"></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge badge-green">include</span></td>
+                  <td class="mono strong">/*</td>
+                  <td class="soft">1,847</td>
+                  <td></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-danger">exclude</span></td>
+                  <td class="mono strong">/blog/*</td>
+                  <td class="soft">-212</td>
+                  <td><button class="btn-icon" aria-label="Remove pattern"><svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-danger">exclude</span></td>
+                  <td class="mono strong">/*?print=*</td>
+                  <td class="soft">-46</td>
+                  <td><button class="btn-icon" aria-label="Remove pattern"><svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-neutral">off</span></td>
+                  <td class="mono" style="color:var(--ink-faint);">*.pdf</td>
+                  <td class="faint">binary files skipped</td>
+                  <td><button class="btn-icon" aria-label="Enable pattern"><span class="toggle" role="switch" aria-checked="false" aria-label="Toggle PDF crawling"></span></button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Caps -->
+        <div class="grid-2">
+          <div class="field">
+            <label for="maxp">Max pages</label>
+            <input class="input num" id="maxp" value="5000">
+            <span class="help">Hard ceiling. Crawl stops when reached.</span>
+          </div>
+          <div class="field">
+            <label for="maxd">Max depth</label>
+            <input class="input num" id="maxd" value="10">
+            <span class="help">Link hops from the crawl root.</span>
+          </div>
+        </div>
+
+        <!-- Privacy disclosure -->
+        <div class="notice notice-green">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          <span><strong>Crawled locally, stored on this device, nothing leaves your machine.</strong> Pages are fetched from the site over your existing session, parsed and embedded in your browser, and written to local storage. Sherpa has no server, no account, and sends no telemetry.</span>
+        </div>
+
+        <div class="row-between">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-primary btn-lg">Continue to crawl
+            <svg class="icon" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 2 — CRAWL & INDEX ===================== -->
+    <section class="card mb-5">
+      <div class="card-head">
+        <div class="row gap-3">
+          <span class="section-tag" style="margin:0;"><span class="n">2</span></span>
+          <div><h2>Crawl &amp; index</h2></div>
+        </div>
+        <div class="row gap-2">
+          <span class="badge badge-amber"><span class="dot dot-amber"></span> Paused · sign-in needed</span>
+          <button class="btn btn-sm"><svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg> Resume</button>
+        </div>
+      </div>
+      <div class="card-body stack-5">
+
+        <!-- Auth wall banner — where authentication occurs in the flow -->
+        <div class="notice notice-amber" style="align-items:flex-start;">
+          <svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="1.6"/><path d="M12 12.6V14.6"/></svg>
+          <div>
+            <strong>Authentication required to continue.</strong> Sherpa crawls as you, and <span class="mono">docs.northwind.com</span> returned <span class="mono">HTTP 401</span> for 1,235 URLs behind sign-in. Your credentials never touch Sherpa — it reuses your browser session.
+            <div class="row wrap gap-2" style="margin-top:12px;">
+              <button class="btn btn-sm btn-primary">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Sign in to docs.northwind.com
+              </button>
+              <button class="btn btn-sm">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Resume crawl
+              </button>
+              <span class="meta" style="align-self:center;">See the full panel in <a href="panel-auth-required.html">Authentication required</a></span>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Crawl progress -->
+        <div>
+          <div class="row-between mb-2">
+            <span class="row gap-2"><svg class="icon icon-sm" viewBox="0 0 24 24" style="color:var(--amber)"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> <strong style="font-size:13.5px;">Crawl paused at auth wall</strong></span>
+            <span class="meta num">612 / 1,847 · 1,235 blocked</span>
+          </div>
+          <div class="progress amber"><span style="width:33%"></span></div>
+          <div class="row wrap gap-4 mt-3">
+            <span class="relevance"><span class="dot dot-green"></span> 612 fetched</span>
+            <span class="relevance"><span class="dot dot-amber"></span> 1,235 need sign-in</span>
+            <span class="relevance"><span class="dot dot-faint"></span> 0 queued</span>
+            <span class="relevance"><span class="dot" style="background:var(--danger)"></span> 3 failed</span>
+          </div>
+          <div class="mono meta mt-3" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            <span style="color:var(--danger); font-weight:600;">401</span> docs.northwind.com/admin/sso/configure-sandbox → /login
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Indexing progress -->
+        <div>
+          <div class="row-between mb-2">
+            <span class="row gap-2"><svg class="icon icon-sm" viewBox="0 0 24 24" style="color:var(--accent)"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg> <strong style="font-size:13.5px;">Embedding &amp; indexing</strong></span>
+            <span class="meta num">9,120 / 14,203 chunks</span>
+          </div>
+          <div class="progress green"><span style="width:64%"></span></div>
+          <div class="row wrap gap-4 mt-3">
+            <span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg> WebGPU active</span>
+            <span class="meta">all-MiniLM-L6-v2 · ~610 chunks/s</span>
+          </div>
+        </div>
+
+        <!-- Query-while-indexing -->
+        <div class="notice notice-terra">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span><strong>You can already ask questions.</strong> 64% of the site is searchable now — coverage grows as indexing finishes. Answers will note if a topic hasn't been indexed yet.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== STEP 3 — ANSWERING ===================== -->
+    <section class="card">
+      <div class="card-head">
+        <div class="row gap-3">
+          <span class="section-tag" style="margin:0;"><span class="n">3</span></span>
+          <div><h2>How answers are generated</h2></div>
+        </div>
+      </div>
+      <div class="card-body stack-4">
+        <p class="soft" style="max-width:64ch;">Sherpa always grounds answers in your indexed pages. Choose which model writes the answer. You can change this any time in Settings.</p>
+
+        <!-- Option A -->
+        <label class="radio-card selected">
+          <span class="radio-dot"></span>
+          <span class="grow">
+            <span class="row-between">
+              <span class="row gap-2"><strong style="font-size:14px;">Chrome built-in (Gemini Nano)</strong><span class="badge badge-green">On-device · free</span></span>
+              <span class="badge badge-terra">Default</span>
+            </span>
+            <span class="help" style="display:block; margin-top:6px;">Runs entirely in Chrome on this machine. No key, no cost, nothing leaves your device. Recommended for almost everyone.</span>
+          </span>
+        </label>
+
+        <!-- Option B -->
+        <label class="radio-card">
+          <span class="radio-dot"></span>
+          <span class="grow">
+            <span class="row gap-2"><strong style="font-size:14px;">Bring your own API key</strong><span class="badge badge-amber">Optional · leaves device</span></span>
+            <span class="help" style="display:block; margin-top:6px;">Use OpenAI, Anthropic, or Google Gemini for longer, more fluent answers. Your question and the retrieved chunks are sent to that provider.</span>
+
+            <span class="stack-3" style="display:flex; flex-direction:column; margin-top:14px;">
+              <span class="row gap-3" style="flex-wrap:wrap; align-items:center;">
+                <span class="segmented" role="tablist" aria-label="Provider">
+                  <button role="tab" aria-pressed="true">OpenAI</button>
+                  <button role="tab" aria-pressed="false">Anthropic</button>
+                  <button role="tab" aria-pressed="false">Gemini</button>
+                </span>
+                <select class="select" aria-label="Model" style="max-width:200px;">
+                  <option>gpt-4o-mini</option>
+                  <option>gpt-4o</option>
+                  <option>o4-mini</option>
+                </select>
+              </span>
+              <span class="input-group">
+                <span class="input-affix pre"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
+                <input class="input mono" type="password" value="sk-proj-••••••••••••••••••••••••" aria-label="API key" style="border-radius:0;">
+                <button class="btn">Verify</button>
+              </span>
+              <span class="notice notice-amber">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>With a key set, queries and matched chunks are sent to your provider. Keys are stored locally and never shared with Sherpa.</span>
+              </span>
+            </span>
+          </span>
+        </label>
+
+        <div class="notice">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span><strong>No key needed.</strong> If you don't add one, Chrome's built-in model is used. An <strong>Extractive</strong> tier (no model at all — verbatim passages with citations) is always available as a fallback and works even offline.</span>
+        </div>
+
+        <div class="row-between mt-2">
+          <button class="btn btn-ghost">Back</button>
+          <button class="btn btn-primary btn-lg">Finish setup
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

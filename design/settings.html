@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sherpa — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-tab">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z"/><path d="M8 20 L11 14.5"/></svg>
+        <span class="brand-name">Sherpa</span>
+      </div>
+      <nav class="topbar-nav" aria-label="Primary">
+        <a href="crawl-setup.html">Crawl setup</a>
+        <a href="index-management.html">Indexes</a>
+        <a href="gap-report.html">Gap report</a>
+        <a href="#" class="active">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page page-narrow">
+
+    <div class="page-header">
+      <h1>Settings</h1>
+      <p>Sherpa is local-first by design. These controls govern permissions, storage, and the optional model key.</p>
+    </div>
+
+    <div class="stack-5">
+
+      <!-- Zero egress -->
+      <section class="card">
+        <div class="card-head"><h2>Privacy</h2><span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> Zero egress</span></div>
+        <div class="card-body">
+          <div class="notice notice-green">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span><strong>Nothing leaves this device.</strong> The only network traffic Sherpa makes is fetching the sites you crawl and, once, downloading the local embedding model. No accounts, no telemetry, no analytics. This changes only if you add your own API key below.</span>
+          </div>
+          <dl class="kv mt-5">
+            <dt>Telemetry</dt><dd><span class="badge badge-green">Disabled — not collected</span></dd>
+            <dt>Account</dt><dd class="soft">None. Sherpa has no sign-in.</dd>
+            <dt>Outbound to model provider</dt><dd><span class="badge badge-terra">Chrome built-in — stays on device</span></dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Host permissions -->
+      <section class="card">
+        <div class="card-head"><h2>Site permissions</h2><span class="meta">hosts Sherpa may fetch</span></div>
+        <table class="table">
+          <thead><tr><th class="strong">Host</th><th>Granted</th><th>Scope</th><th style="text-align:right;">Revoke</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono strong">docs.northwind.com</td>
+              <td class="soft">Jul 28, 2026</td>
+              <td><span class="badge badge-neutral">read pages</span></td>
+              <td style="text-align:right;"><button class="btn btn-sm btn-danger">Revoke</button></td>
+            </tr>
+            <tr>
+              <td class="mono strong">developers.acme.io</td>
+              <td class="soft">Jul 15, 2026</td>
+              <td><span class="badge badge-neutral">read pages</span></td>
+              <td style="text-align:right;"><button class="btn btn-sm btn-danger">Revoke</button></td>
+            </tr>
+            <tr>
+              <td class="mono strong">wiki.corp.northwind.com</td>
+              <td class="soft">Jun 20, 2026</td>
+              <td><span class="badge badge-terra">authenticated</span></td>
+              <td style="text-align:right;"><button class="btn btn-sm btn-danger">Revoke</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Storage -->
+      <section class="card">
+        <div class="card-head"><h2>Storage</h2></div>
+        <div class="card-body stack-4">
+          <div>
+            <div class="row-between mb-2">
+              <span class="soft">On-device usage</span>
+              <span class="meta"><strong class="num" style="color:var(--ink)">118 MB</strong> of 2.0 GB granted</span>
+            </div>
+            <div class="meter">
+              <span style="width:34%; background:var(--primary)"></span>
+              <span style="width:14%; background:var(--accent)"></span>
+              <span style="width:9%; background:var(--amber)"></span>
+            </div>
+          </div>
+          <hr class="divider">
+          <div class="row-between">
+            <div>
+              <label style="display:block;">Persistent storage</label>
+              <span class="help">Ask Chrome not to evict Sherpa's indexes under storage pressure.</span>
+            </div>
+            <span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> Granted</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Answering / BYOK -->
+      <section class="card">
+        <div class="card-head"><h2>Answering model</h2></div>
+        <div class="card-body stack-4">
+          <label class="radio-card selected">
+            <span class="radio-dot"></span>
+            <span class="grow">
+              <span class="row gap-2"><strong style="font-size:14px;">Chrome built-in (Gemini Nano)</strong><span class="badge badge-green">On-device · free</span></span>
+              <span class="help" style="display:block; margin-top:4px;">Default. No key, nothing leaves your device.</span>
+            </span>
+          </label>
+          <label class="radio-card">
+            <span class="radio-dot"></span>
+            <span class="grow">
+              <span class="row-between">
+                <span class="row gap-2"><strong style="font-size:14px;">Bring your own key</strong><span class="badge badge-amber">Queries leave device</span></span>
+                <span class="badge badge-neutral">OpenAI · gpt-4o-mini</span>
+              </span>
+              <span class="row gap-3 mt-3" style="flex-wrap:wrap; align-items:center;">
+                <span class="segmented" role="tablist" aria-label="Provider">
+                  <button role="tab" aria-pressed="true">OpenAI</button>
+                  <button role="tab" aria-pressed="false">Anthropic</button>
+                  <button role="tab" aria-pressed="false">Gemini</button>
+                </span>
+                <select class="select" aria-label="Model" style="max-width:200px;">
+                  <option>gpt-4o-mini</option>
+                  <option>gpt-4o</option>
+                  <option>o4-mini</option>
+                </select>
+              </span>
+              <span class="input-group mt-3">
+                <span class="input-affix pre"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5"/></svg></span>
+                <input class="input mono" type="password" value="sk-proj-••••••••••••••••4a9F" aria-label="Stored API key" style="border-radius:0;">
+                <button class="btn">Replace</button>
+              </span>
+              <span class="row gap-2 mt-3">
+                <button class="btn btn-sm btn-danger">Remove key</button>
+                <span class="help" style="align-self:center;">Removing the key reverts to Chrome built-in.</span>
+              </span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Retrieval floor -->
+      <section class="card">
+        <div class="card-head"><h2>Answer confidence</h2></div>
+        <div class="card-body">
+          <div class="field">
+            <div class="label-row"><label for="floor">Score floor for refusal</label><span class="meta mono">0.45</span></div>
+            <input class="input num" id="floor" value="0.45" style="max-width:120px;">
+            <span class="help">Below this hybrid retrieval score, Sherpa refuses and shows nearest pages instead of guessing. Higher is stricter.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Danger zone -->
+      <section class="card" style="border-color:#E4C4BC;">
+        <div class="card-head" style="border-color:#E4C4BC;">
+          <h2 style="color:var(--danger);">Delete everything</h2>
+          <svg class="icon" viewBox="0 0 24 24" style="color:var(--danger)"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="card-body row-between wrap gap-4" style="background:var(--tint-danger); border-radius:0 0 var(--r-lg) var(--r-lg);">
+          <div style="max-width:52ch;">
+            <p style="font-weight:500;">Remove all indexes, keys, and permissions</p>
+            <p class="help">Permanently erases every index (118 MB), the stored API key, all host permissions, and settings. This cannot be undone.</p>
+          </div>
+          <button class="btn btn-danger-solid"><svg class="icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete all Sherpa data</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>

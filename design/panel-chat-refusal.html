@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sherpa — Not in this index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="panel-stage">
+  <div class="panel" role="region" aria-label="Sherpa side panel">
+
+    <div class="panel-head">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z"/><path d="M8 20 L11 14.5"/></svg>
+        <span class="brand-name">Sherpa</span>
+      </div>
+      <div class="row gap-2">
+        <button class="site-switch" aria-label="Switch indexed site">
+          <span class="dot dot-green"></span>
+          Northwind Help
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="btn-icon" aria-label="New conversation">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-freshness">
+      <span class="dot dot-green"></span>
+      <span>Index up to date · <span class="mono">docs.northwind.com</span> · 1,847 pages</span>
+    </div>
+
+    <div class="panel-body">
+
+      <div class="turn">
+        <div class="q-row"><div class="q-bubble">Does Northwind have a Salesforce integration for opportunity sync?</div></div>
+
+        <!-- Refusal card -->
+        <div class="card" style="border-color:#E7D3A6; background:var(--tint-amber); box-shadow:none;">
+          <div class="card-pad">
+            <div class="row gap-3" style="align-items:flex-start;">
+              <svg class="icon icon-lg" viewBox="0 0 24 24" style="color:#90671D; margin-top:1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div>
+                <h3 style="font-size:14.5px;">Not in this index</h3>
+                <p class="soft" style="font-size:13px; margin-top:6px; line-height:1.55;">The Northwind docs don't cover a Salesforce opportunity-sync integration. The closest pages scored below Sherpa's confidence floor, so I won't guess an answer.</p>
+                <p class="meta mono" style="margin-top:8px;">top match 0.31 · floor 0.45</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nearest pages -->
+        <div class="sources-label">Nearest pages you might check</div>
+
+        <div class="source-card">
+          <div class="source-top">
+            <div>
+              <div class="source-title"><a href="#">Available CRM Connectors</a></div>
+              <div class="source-crumb">Integrations › CRM › Overview</div>
+            </div>
+            <svg class="icon icon-sm" viewBox="0 0 24 24" style="color:var(--ink-faint); margin-top:2px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </div>
+          <div class="source-snippet">Northwind ships native connectors for HubSpot and Pipedrive. Other CRMs can be wired through the generic webhook and REST endpoints…</div>
+          <div class="row mt-3"><span class="relevance"><span class="relevance-bar"><span style="width:31%; background:var(--amber)"></span></span> 31% relevant</span></div>
+        </div>
+
+        <div class="source-card">
+          <div class="source-top">
+            <div>
+              <div class="source-title"><a href="#">Building a Custom Integration with Webhooks</a></div>
+              <div class="source-crumb">Developers › Webhooks › Patterns</div>
+            </div>
+            <svg class="icon icon-sm" viewBox="0 0 24 24" style="color:var(--ink-faint); margin-top:2px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </div>
+          <div class="source-snippet">Use outbound webhooks to push record changes to any external system. This pattern is commonly used to sync deals or opportunities with a third-party CRM…</div>
+          <div class="row mt-3"><span class="relevance"><span class="relevance-bar"><span style="width:28%; background:var(--amber)"></span></span> 28% relevant</span></div>
+        </div>
+
+        <div class="notice notice-terra mt-4">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>If you expected this to be covered, the docs site may have added it since your last crawl. <a href="#">Refresh the index</a>.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-footer">
+      <div class="composer">
+        <textarea rows="1" placeholder="Rephrase or ask something else…" aria-label="Ask a question"></textarea>
+        <button class="composer-send" aria-label="Send question">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
+      <div class="composer-hint">
+        <span>A refusal means the answer isn't in your docs — not that Sherpa failed</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

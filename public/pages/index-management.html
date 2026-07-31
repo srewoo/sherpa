@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sherpa — Indexes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-tab">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z"/><path d="M8 20 L11 14.5"/></svg>
+        <span class="brand-name">Sherpa</span>
+      </div>
+      <nav class="topbar-nav" aria-label="Primary">
+        <a href="crawl-setup.html">Crawl setup</a>
+        <a href="#" class="active">Indexes</a>
+        <a href="gap-report.html">Gap report</a>
+        <a href="settings.html">Settings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page">
+
+    <div class="page-header row-between" style="align-items:flex-end;">
+      <div>
+        <h1>Indexes</h1>
+        <p>Each index is a self-contained, on-device copy of a help site. Refresh to pick up new pages, or delete to reclaim storage.</p>
+      </div>
+      <button class="btn btn-primary"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> New index</button>
+    </div>
+
+    <!-- Storage summary -->
+    <div class="card mb-5">
+      <div class="card-body row-between wrap gap-4">
+        <div style="flex:1; min-width:280px;">
+          <div class="row-between mb-2">
+            <span class="eyebrow">Storage used by Sherpa</span>
+            <span class="meta"><strong class="num" style="color:var(--ink)">118 MB</strong> of 2.0 GB granted</span>
+          </div>
+          <div class="meter">
+            <span style="width:34%; background:var(--primary)" title="Northwind Help Center"></span>
+            <span style="width:14%; background:var(--accent)" title="Acme Developer Docs"></span>
+            <span style="width:9%; background:var(--amber)" title="Internal Runbooks"></span>
+          </div>
+          <div class="row wrap gap-4 mt-3">
+            <span class="relevance"><span class="dot dot-terra"></span> Northwind 41 MB</span>
+            <span class="relevance"><span class="dot dot-green"></span> Acme Dev 17 MB</span>
+            <span class="relevance"><span class="dot dot-amber"></span> Runbooks 11 MB</span>
+          </div>
+        </div>
+        <div class="row gap-2">
+          <span class="badge badge-green"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Persistent storage on</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Index table -->
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th class="strong">Site</th>
+            <th class="num">Pages</th>
+            <th class="num">Chunks</th>
+            <th class="num">Size</th>
+            <th>Freshness</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row 1 -->
+          <tr>
+            <td class="strong">
+              <div class="row gap-3">
+                <span class="dot dot-terra"></span>
+                <div>
+                  <div style="font-weight:600; color:var(--ink);">Northwind Help Center</div>
+                  <div class="mono meta">docs.northwind.com</div>
+                </div>
+              </div>
+            </td>
+            <td class="num">1,847</td>
+            <td class="num">14,203</td>
+            <td class="num">41 MB</td>
+            <td><span class="badge badge-green"><span class="dot dot-green"></span> Fresh · 3 days ago</span></td>
+            <td>
+              <div class="row gap-2" style="justify-content:flex-end;">
+                <button class="btn btn-sm"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh</button>
+                <button class="btn-icon" aria-label="More actions for Northwind"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+              </div>
+            </td>
+          </tr>
+          <!-- Row 2 -->
+          <tr>
+            <td class="strong">
+              <div class="row gap-3">
+                <span class="dot dot-green"></span>
+                <div>
+                  <div style="font-weight:600; color:var(--ink);">Acme Developer Docs</div>
+                  <div class="mono meta">developers.acme.io</div>
+                </div>
+              </div>
+            </td>
+            <td class="num">612</td>
+            <td class="num">5,880</td>
+            <td class="num">17 MB</td>
+            <td><span class="badge badge-green"><span class="dot dot-green"></span> Fresh · 6 days ago</span></td>
+            <td>
+              <div class="row gap-2" style="justify-content:flex-end;">
+                <button class="btn btn-sm"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh</button>
+                <button class="btn-icon" aria-label="More actions for Acme"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+              </div>
+            </td>
+          </tr>
+          <!-- Row 3 — stale -->
+          <tr>
+            <td class="strong">
+              <div class="row gap-3">
+                <span class="dot dot-amber"></span>
+                <div>
+                  <div style="font-weight:600; color:var(--ink);">Internal Runbooks</div>
+                  <div class="mono meta">wiki.corp.northwind.com/runbooks</div>
+                </div>
+              </div>
+            </td>
+            <td class="num">338</td>
+            <td class="num">3,120</td>
+            <td class="num">11 MB</td>
+            <td><span class="badge badge-amber"><span class="dot dot-amber"></span> Stale · indexed 41 days ago</span></td>
+            <td>
+              <div class="row gap-2" style="justify-content:flex-end;">
+                <button class="btn btn-sm btn-primary"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Refresh now</button>
+                <button class="btn-icon" aria-label="More actions for Runbooks"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Detail / expanded actions for one index -->
+    <div class="card mt-5">
+      <div class="card-head">
+        <div class="row gap-3"><span class="dot dot-terra"></span><h2>Northwind Help Center</h2></div>
+        <span class="meta mono">docs.northwind.com</span>
+      </div>
+      <div class="card-body">
+        <div class="grid-3 mb-5">
+          <div class="stat"><div class="k">Incremental recrawl</div><div class="v num">~2<small> min</small></div><span class="help">Only fetches changed pages</span></div>
+          <div class="stat"><div class="k">Last full crawl</div><div class="v" style="font-size:16px;">Jul 28, 2026</div><span class="help">14 min · 3 pages failed</span></div>
+          <div class="stat"><div class="k">Answering tier</div><div class="v" style="font-size:16px;">Chrome built-in</div><span class="help">Gemini Nano · on-device</span></div>
+        </div>
+
+        <div class="row wrap gap-3">
+          <button class="btn"><svg class="icon" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Incremental refresh</button>
+          <button class="btn"><svg class="icon" viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg> Full re-crawl</button>
+          <button class="btn"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export index</button>
+          <div class="grow"></div>
+          <button class="btn btn-danger"><svg class="icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Delete index · reclaims 41 MB</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+</body>
+</html>
