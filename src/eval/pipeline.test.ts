@@ -20,9 +20,11 @@ import type { StoredChunk } from "@/domain/records.js";
 import { CORPUS, GOLDEN, ADVERSARIAL, embeddedText } from "./fixtures/corpus.js";
 import { fixtureEmbedder, FIXTURE_DIM } from "./fixtures/embedder.js";
 import { runRetrievalEval, runAdversarialEval, passesGate } from "./harness.js";
+import { DEFAULT_REFUSAL_FLOOR } from "@/settings/settings.js";
 
 const INDEX = "eval";
-const FLOOR = 0.45; // the shipped default (settings.ts)
+// The shipped default, imported so the gate always measures what users get.
+const FLOOR = DEFAULT_REFUSAL_FLOOR;
 
 let db: SherpaDatabase;
 
@@ -55,19 +57,30 @@ beforeAll(async () => {
   await bm25Store.build(
     db,
     INDEX,
-    chunks.map((c) => ({ id: c.vectorId, text: c.text })),
+    chunks.map((c) => ({
+      id: c.vectorId,
+      title: c.title,
+      section: c.headingPath,
+      content: c.body,
+    })),
   );
 });
 
+/**
+ * Retrieval now returns articles; recall is still measured over the chunks that
+ * actually matched, so the metric means the same thing it did before.
+ */
 async function retrieveIds(query: string): Promise<number[]> {
   const result = await retrieve({ db, indexId: INDEX, embedder: fixtureEmbedder }, query);
-  return result.chunks.filter((c) => !c.viaNeighbour).map((c) => c.vectorId);
+  return result.articles.flatMap((a) =>
+    a.chunks.filter((c) => !c.viaNeighbour).map((c) => c.vectorId),
+  );
 }
 
 /** The product's own answer/refuse decision (5.8.8). */
 async function didAnswer(query: string): Promise<boolean> {
   const result = await retrieve({ db, indexId: INDEX, embedder: fixtureEmbedder }, query);
-  return result.chunks.length > 0 && result.topScore >= FLOOR;
+  return result.articles.length > 0 && result.topScore >= FLOOR;
 }
 
 describe("retrieval eval (M1, M2)", () => {
@@ -91,7 +104,7 @@ describe("retrieval eval (M1, M2)", () => {
       { db, indexId: INDEX, embedder: fixtureEmbedder },
       "difference between skipped rows and validation failure",
     );
-    const delivered = result.chunks.map((c) => c.vectorId);
+    const delivered = result.articles.flatMap((a) => a.chunks.map((c) => c.vectorId));
     expect(delivered).toContain(5);
     expect(delivered).toContain(6);
   });

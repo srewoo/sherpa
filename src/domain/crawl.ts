@@ -21,7 +21,17 @@ export interface AuthWall {
   readonly kind: "session" | "basic";
 }
 
-export type Fetcher = (url: string) => Promise<FetchResult>;
+/**
+ * Cache validators from a previous crawl, sent as a conditional request so an
+ * unchanged page costs a 304 with no body instead of a full download
+ * (PRD 5.6.5).
+ */
+export interface Validators {
+  readonly etag: string | undefined;
+  readonly lastmod: string | undefined;
+}
+
+export type Fetcher = (url: string, validators?: Validators) => Promise<FetchResult>;
 
 /** Extract in-page links from HTML relative to `baseUrl`. Injected so the
  * engine stays DOM-free and testable; the offscreen impl uses DOMParser. */

@@ -34,7 +34,7 @@ export class ExtractiveGenerator implements AnswerGenerator {
   }
 
   async *answer(req: AnswerRequest): AsyncIterable<AnswerChunk> {
-    const direct = req.context.filter((c) => !c.viaNeighbour).slice(0, 4);
+    const direct = req.context.slice(0, 4);
     if (direct.length === 0) {
       yield { delta: "I don't have that in this index." };
       return;
@@ -45,7 +45,7 @@ export class ExtractiveGenerator implements AnswerGenerator {
       const chunk = direct[i]!;
       const picks = bestSentences(chunk.body, terms, 2);
       const excerpt = picks.length > 0 ? picks.join(" ") : chunk.body.slice(0, 240);
-      yield { delta: `**${chunk.headingPath || chunk.title}** [${i + 1}]\n${excerpt}\n\n` };
+      yield { delta: `**${chunk.title || chunk.headingPath}** [${i + 1}]\n${excerpt}\n\n` };
     }
   }
 }

@@ -23,6 +23,8 @@ export default defineConfig({
         sidepanel: "src/sidepanel/index.html",
         options: "src/options/index.html",
         offscreen: "src/offscreen/offscreen.html",
+        help: "src/help/index.html",
+        privacy: "src/privacy/index.html",
       },
     },
   },

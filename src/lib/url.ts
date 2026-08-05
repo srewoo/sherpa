@@ -57,6 +57,26 @@ export function canonicalizeUrl(raw: string, base?: string): string | null {
     u.port = "";
   }
 
+  /**
+   * Upgrade a same-host `http://` link found on an `https://` page.
+   *
+   * Help centres are full of legacy absolute links written before the site
+   * moved to TLS, and every one of them costs a redirect and — because scope is
+   * scheme-blind — forks the page's identity, so the same article is fetched
+   * and hashed twice. Following the page we found it on is the conservative
+   * read: the server has already told us it serves this host over TLS.
+   *
+   * Restricted to the default port so an explicit `:80` is left alone.
+   */
+  if (u.protocol === "http:" && u.port === "" && base) {
+    try {
+      const b = new URL(base);
+      if (b.protocol === "https:" && b.hostname === u.hostname) u.protocol = "https:";
+    } catch {
+      // An unparseable base only means we can't make this judgement.
+    }
+  }
+
   // Strip tracking params, then sort the survivors for a stable identity.
   const kept: [string, string][] = [];
   for (const [k, v] of u.searchParams) {
@@ -86,12 +106,62 @@ export function dedupeKey(canonical: string): string {
   return u.toString();
 }
 
+/**
+ * True when two URLs sit in the same documentation section — same host, and
+ * sharing at least the first two path segments.
+ *
+ * Backs the page-context boost: a question asked while reading
+ * `/support/solutions/articles/asset-hub-x` should favour other Asset Hub
+ * pages. Two segments is the useful granularity on help sites, where the first
+ * is usually a constant like `/support` or `/docs`.
+ */
+export function sameSection(candidate: string, current: string): boolean {
+  let a: URL;
+  let b: URL;
+  try {
+    a = new URL(candidate);
+    b = new URL(current);
+  } catch {
+    return false;
+  }
+  if (a.hostname !== b.hostname) return false;
+
+  const segments = (u: URL): string[] => u.pathname.split("/").filter(Boolean);
+  const left = segments(a);
+  const right = segments(b);
+  if (left.length === 0 || right.length === 0) return false;
+
+  const depth = Math.min(2, left.length, right.length);
+  for (let i = 0; i < depth; i++) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+}
+
 /** True when `candidate` is on the same registrable host as `root`. */
 export function sameHost(candidate: string, root: string): boolean {
   try {
     return new URL(candidate).hostname === new URL(root).hostname;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The path prefix a crawl root confines the crawl to.
+ *
+ * A root of `/help` admits `/help/anything`, which is the scoping the PRD asks
+ * for (5.1.1) — but it means a root pointing at a *page* rather than a section,
+ * like `/support/home`, admits almost nothing, because the site's articles are
+ * siblings rather than children. We don't silently widen the scope; we surface
+ * this string in the crawl preview so the user can see what they've chosen.
+ */
+export function scopePrefix(root: string): string {
+  try {
+    const u = new URL(root);
+    return u.pathname.endsWith("/") ? u.pathname : `${u.pathname}/`;
+  } catch {
+    return "/";
   }
 }
 

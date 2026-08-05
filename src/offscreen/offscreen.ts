@@ -16,8 +16,10 @@ import { storageEstimate } from "@/storage/quota.js";
 import { previewCrawl } from "@/crawl/preview.js";
 import { invalidateSession } from "@/retrieval/session.js";
 import { CrawlController, USER_AGENT } from "./runCrawlJob.js";
-import { fetchText } from "./browserFetch.js";
+import { fetchText, browserFetch, domLinks } from "./browserFetch.js";
 import { runQuery } from "./answerQueryJob.js";
+import { importCorpus } from "./importCorpusJob.js";
+import { parseCorpusExport } from "@/eval/corpusExport.js";
 
 const post = (progress: CrawlProgress): void => {
   void chrome.runtime.sendMessage({ type: "crawl/progress", progress }).catch(() => {});
@@ -54,20 +56,69 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
       void getController().then((c) => afterCrawl(c.resume()));
       break;
     case "crawl/recrawl": {
-      const { indexId } = raw;
-      void getController().then((c) => afterCrawl(c.startIncremental(indexId)));
+      const { indexId, background } = raw;
+      void getController().then((c) =>
+        afterCrawl(c.startIncremental(indexId, { background: background === true })),
+      );
       break;
     }
+    // Idle-state transitions (5.6.6). Both are no-ops unless the crawl in
+    // flight is a scheduled one, so a crawl the user is watching is untouched.
+    case "crawl/yield":
+      void getController().then((c) => c.yieldToUser());
+      break;
+    case "crawl/unyield":
+      void getController().then((c) => afterCrawl(c.resumeBackground()));
+      break;
     case "crawl/recrawl-full": {
-      const { indexId } = raw;
-      void getController().then((c) => afterCrawl(c.startFullRecrawl(indexId)));
+      const { indexId, config } = raw;
+      void getController().then((c) => afterCrawl(c.startFullRecrawl(indexId, config)));
+      break;
+    }
+    /**
+     * Import runs here rather than in the options page because it needs the
+     * embedder, which is loaded once in this document.
+     */
+    case "index/import": {
+      const { url } = raw;
+      void (async () => {
+        try {
+          const corpus = parseCorpusExport(await (await fetch(url)).json());
+          const db = await openSherpaDb();
+          await importCorpus(db, corpus, (progress) => {
+            void chrome.runtime.sendMessage({ type: "index/import-progress", progress }).catch(() => {});
+          });
+          invalidateSession();
+        } catch (err) {
+          void chrome.runtime
+            .sendMessage({
+              type: "index/import-progress",
+              progress: {
+                phase: "error",
+                done: 0,
+                total: 0,
+                host: "",
+                error: err instanceof Error ? err.message : "import failed",
+              },
+            })
+            .catch(() => {});
+        }
+      })();
       break;
     }
     case "crawl/preview": {
       const { requestId, config } = raw;
       void (async () => {
         try {
-          const preview = await previewCrawl(config, fetchText, await storageEstimate(), USER_AGENT);
+          const preview = await previewCrawl(config, {
+            fetchText,
+            estimate: await storageEstimate(),
+            userAgent: USER_AGENT,
+            // Probing the root's own links is what catches a root that scopes
+            // the crawl down to a single page (PRD 5.1.4).
+            fetchPage: browserFetch,
+            extractLinks: domLinks,
+          });
           await chrome.runtime.sendMessage({ type: "crawl/preview-result", requestId, preview });
         } catch (err) {
           await chrome.runtime
@@ -89,12 +140,12 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
       void closeSherpaDb();
       break;
     case "query/ask": {
-      const { requestId, indexId, query } = raw;
+      const { requestId, indexId, query, currentUrl } = raw;
       const emit = (event: PanelEvent): void => {
         void chrome.runtime.sendMessage({ type: "query/event", requestId, event }).catch(() => {});
       };
       void openSherpaDb()
-        .then((db) => runQuery(db, indexId, query, emit))
+        .then((db) => runQuery(db, indexId, query, emit, currentUrl))
         .catch(() => emit({ kind: "done" }));
       break;
     }

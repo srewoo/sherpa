@@ -45,7 +45,7 @@ export const indexRepo = {
    */
   async delete(db: SherpaDatabase, id: string): Promise<void> {
     const tx = db.transaction(
-      ["indexRegistry", "pages", "chunks", "vectors", "bm25", "frontier", "queryLog"],
+      ["indexRegistry", "pages", "chunks", "vectors", "bm25", "frontier", "queryLog", "chatSessions"],
       "readwrite",
     );
     await tx.objectStore("pages").delete(IDBKeyRange.bound([id], [id, STR_MAX]));
@@ -59,6 +59,12 @@ export const indexRepo = {
     const log = tx.objectStore("queryLog").index("byIndex");
     for (const entry of await log.getAll(id)) {
       if (entry.id !== undefined) await tx.objectStore("queryLog").delete(entry.id);
+    }
+
+    // Conversations belong to the index they were asked against (PRD 5.9.9).
+    const sessions = tx.objectStore("chatSessions");
+    for (const row of await sessions.index("byIndex").getAll(id)) {
+      await sessions.delete(row.id);
     }
 
     await tx.objectStore("indexRegistry").delete(id);

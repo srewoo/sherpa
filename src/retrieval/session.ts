@@ -13,12 +13,12 @@ import type { SherpaDatabase } from "@/storage/db.js";
 import { vectorStore, type LoadedVectors } from "@/storage/vectors.js";
 import { chunkStore } from "@/storage/chunks.js";
 import { bm25Store } from "@/storage/bm25Store.js";
-import { Bm25Index } from "./bm25.js";
+import { FieldedBm25Index } from "./fieldedBm25.js";
 
 export interface IndexSession {
   readonly indexId: string;
   readonly vectors: LoadedVectors;
-  readonly bm25: Bm25Index;
+  readonly bm25: FieldedBm25Index;
   /** vectorId → chunk, so a scored row resolves without touching IndexedDB. */
   readonly byId: ReadonlyMap<number, StoredChunk>;
   /** page URL → that page's chunks in order, for neighbour expansion (5.7.5). */
@@ -46,7 +46,16 @@ async function build(db: SherpaDatabase, indexId: string): Promise<IndexSession>
 
   // Fall back to building in memory when the crawl was interrupted before the
   // sparse index was written — correctness first, speed second.
-  const bm25 = stored ?? new Bm25Index(chunks.map((c) => ({ id: c.vectorId, text: c.text })));
+  const bm25 =
+    stored ??
+    FieldedBm25Index.build(
+      chunks.map((c) => ({
+        id: c.vectorId,
+        title: c.title,
+        section: c.headingPath,
+        content: c.body,
+      })),
+    );
 
   return { indexId, vectors, bm25, byId, byUrl };
 }

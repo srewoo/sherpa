@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sherpa — Help</title>
+  </head>
+  <body class="in-doc">
+    <div class="doc">
+      <header class="doc-head">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z" />
+            <path d="M8 20 L11 14.5" />
+          </svg>
+          <span class="brand-name">Sherpa</span>
+        </div>
+        <nav class="doc-nav">
+          <a href="/src/privacy/index.html">Privacy</a>
+        </nav>
+      </header>
+
+      <h1>How Sherpa works</h1>
+      <p class="doc-lede">
+        Sherpa reads a documentation site once, keeps the whole thing on your computer, and answers
+        questions from it. No account, no server, no cost per question. This page explains what it
+        does, in the order you will meet it.
+      </p>
+
+      <nav class="doc-toc" aria-label="On this page">
+        <a href="#start">1. Index a site</a>
+        <a href="#ask">2. Ask a question</a>
+        <a href="#trust">3. Knowing when to trust it</a>
+        <a href="#manage">4. Keeping indexes fresh</a>
+        <a href="#gaps">5. Finding documentation gaps</a>
+        <a href="#tiers">6. Which model answers</a>
+        <a href="#tuning">7. Tuning search quality</a>
+        <a href="#trouble">8. Troubleshooting</a>
+      </nav>
+
+      <section id="start">
+        <h2>1. Index a site</h2>
+        <p>
+          Open <strong>Options → Set up an index</strong> and paste the address of a documentation
+          site — the section you want, not necessarily the whole domain. Sherpa checks the site
+          first and tells you what it found before anything is downloaded.
+        </p>
+        <figure>
+          <img src="/help/crawl-setup.png" alt="The crawl setup screen, showing the estimated page count, crawl duration and disk usage before a crawl starts." />
+          <figcaption>
+            The estimate is real, not a guess: Sherpa reads the site's sitemap and samples pages to
+            work it out. If it would not fit in the space your browser allows, it says so and stops
+            rather than filling your disk and failing halfway.
+          </figcaption>
+        </figure>
+        <p>
+          When you press start, Chrome asks permission for that one site. Sherpa requests access
+          per-site at this moment rather than up front, so it never holds access to anything you
+          have not indexed.
+        </p>
+        <h3>What Sherpa does while crawling</h3>
+        <ul>
+          <li>Obeys <code>robots.txt</code>, including <code>Crawl-delay</code>, and skips pages marked <code>noindex</code>.</li>
+          <li>Fetches about one page per second by default, and slows down further if the site pushes back.</li>
+          <li>Keeps lists, tables, code blocks and headings intact, and strips navigation and cookie banners.</li>
+          <li>Survives a browser restart. A crawl picks up where it left off.</li>
+          <li>Fetches as <em>you</em>, using your existing session — so a site you are signed into is indexed as you see it.</li>
+        </ul>
+        <p class="doc-note">
+          If a site asks you to sign in partway through, Sherpa pauses and says so instead of
+          indexing a wall of login pages.
+        </p>
+      </section>
+
+      <section id="ask">
+        <h2>2. Ask a question</h2>
+        <p>
+          Click the Sherpa icon, or press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>K</kbd>
+          (<kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>K</kbd> on Windows), to open the side panel. Ask in your
+          own words — you do not need the documentation's vocabulary.
+        </p>
+        <figure>
+          <img src="/help/answer.png" alt="The Sherpa side panel showing an answer with numbered citations and a list of source pages." />
+          <figcaption>
+            Every claim carries a numbered citation. The numbers match the sources listed
+            underneath, so you can check any sentence against the page it came from.
+          </figcaption>
+        </figure>
+        <p>
+          Click a source and Sherpa opens the real page and scrolls to the exact passage,
+          highlighted. The answer is a starting point; the documentation is the authority.
+        </p>
+        <h3>Asking follow-up questions</h3>
+        <p>
+          Sherpa remembers the previous question in a conversation, so "and for annual plans?" works
+          without repeating yourself. Use the <strong>+</strong> button to start a fresh
+          conversation when you change topic.
+        </p>
+        <h3>If you have several sites indexed</h3>
+        <p>
+          The dropdown at the top of the panel picks which one you are asking. Sherpa only ever
+          searches the index you have selected — it does not mix sources.
+        </p>
+      </section>
+
+      <section id="trust">
+        <h2>3. Knowing when to trust it</h2>
+        <p>
+          Sherpa is built to be uncertain out loud. There are three things it can do with a
+          question, and it tells you which one happened.
+        </p>
+        <table class="doc-table">
+          <thead>
+            <tr><th>What you see</th><th>What it means</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>An answer with citations</td>
+              <td>Sherpa found a strong match and answered from it.</td>
+            </tr>
+            <tr>
+              <td>An answer with a note that the match wasn't strong</td>
+              <td>
+                It found something related but not clearly on point. The answer is worth reading and
+                worth checking against the source.
+              </td>
+            </tr>
+            <tr>
+              <td>"Not in this index"</td>
+              <td>Nothing scored well enough. Sherpa shows the nearest pages rather than guessing.</td>
+            </tr>
+          </tbody>
+        </table>
+        <figure>
+          <img src="/help/refusal.png" alt="The side panel declining to answer, showing the match score, the confidence floor, and the nearest pages." />
+          <figcaption>
+            A refusal shows its working — the best score it found and the threshold it had to clear.
+            It means the answer is not in your documentation, not that Sherpa failed.
+          </figcaption>
+        </figure>
+        <p>
+          A refusal is a useful signal. It usually means a page is missing, and section 5 turns
+          those refusals into a list of what to write.
+        </p>
+        <p class="doc-note">
+          Sherpa answers only from the pages you indexed. It will not fall back on what the model
+          learned elsewhere, which is why it can refuse at all.
+        </p>
+      </section>
+
+      <section id="manage">
+        <h2>4. Keeping indexes fresh</h2>
+        <p>
+          <strong>Options → Indexes</strong> lists everything you have indexed, with its size, page
+          count and when it was last updated.
+        </p>
+        <figure>
+          <img src="/help/indexes.png" alt="The index management table listing indexed sites with page counts, sizes, freshness and per-index actions." />
+          <figcaption>
+            Each index is independent — refresh, re-crawl or delete one without touching the others.
+          </figcaption>
+        </figure>
+        <ul>
+          <li><strong>Refresh</strong> — re-checks the site and only re-reads pages that actually changed. Much faster than a full crawl.</li>
+          <li><strong>Re-crawl</strong> — throws the index away and builds it again from scratch. Use it when a site has been restructured.</li>
+          <li><strong>Delete</strong> — removes that index and everything derived from it.</li>
+        </ul>
+        <p>
+          Refreshes also run on their own, every 30 days by default (adjustable in Settings). They
+          wait until your machine has been idle for five minutes and stop the moment you come back,
+          so you should never notice one.
+        </p>
+        <p class="doc-note">
+          If an index shows <strong>Needs access</strong>, permission for that site was revoked. A
+          background job cannot ask for it back — click the button on that row to re-grant it.
+        </p>
+      </section>
+
+      <section id="gaps">
+        <h2>5. Finding documentation gaps</h2>
+        <p>
+          Every question you ask is recorded on your own machine, along with how well Sherpa could
+          answer it. <strong>Options → Gap report</strong> groups the failures by topic.
+        </p>
+        <figure>
+          <img src="/help/gap-report.png" alt="The content gap report, showing clusters of unanswered questions ranked by how often they were asked." />
+          <figcaption>
+            Clusters are ranked by how many people hit them and how far the best match fell short —
+            so the top of the list is the page most worth writing.
+          </figcaption>
+        </figure>
+        <p>
+          Export it as CSV or Markdown to take into a planning session. This data never leaves your
+          device unless you export it yourself.
+        </p>
+      </section>
+
+      <section id="tiers">
+        <h2>6. Which model answers</h2>
+        <p>
+          Finding the right pages and writing the answer are two different jobs. Sherpa always does
+          the finding itself, on your device. For the writing it uses the best option available:
+        </p>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Tier</th><th>What it does</th><th>Where your question goes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Passages</strong></td>
+              <td>No model at all — shows the best matching passages, quoted exactly. Always available.</td>
+              <td>Nowhere.</td>
+            </tr>
+            <tr>
+              <td><strong>Chrome built-in</strong></td>
+              <td>Writes a real answer using Chrome's on-device model, where your Chrome supports it.</td>
+              <td>Nowhere.</td>
+            </tr>
+            <tr>
+              <td><strong>Your own API key</strong></td>
+              <td>Best quality. Uses OpenAI, Anthropic or Gemini with a key you supply.</td>
+              <td>To that provider. This is the only case where anything leaves your device.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          The panel labels which tier answered, every time. If the tier you chose is unavailable,
+          Sherpa says why instead of quietly using a different one.
+        </p>
+      </section>
+
+      <section id="tuning">
+        <h2>7. Tuning search quality</h2>
+        <h3>Answer confidence</h3>
+        <p>
+          Each index measures its own confidence thresholds when its crawl finishes, by testing
+          itself against questions no documentation site could answer and seeing how high those
+          score. What counts as a strong match differs between sites, so a single setting cannot fit
+          them all — which is why this is measured per index rather than configured.
+        </p>
+        <p>
+          You can still override it: <strong>Settings → Answer confidence → Use these numbers for
+          every index</strong>. Raise the refusal threshold if Sherpa answers things your docs do
+          not cover; lower it if it declines things they do.
+        </p>
+        <h3>Better ranking</h3>
+        <p>
+          <strong>Settings → Search quality</strong> has three optional additions. Each costs time
+          per question, so each is off by default:
+        </p>
+        <ul>
+          <li>
+            <strong>Rerank results</strong> — re-reads the top matches with a second model that
+            considers your question and the page together. It makes the biggest difference on sites
+            with many near-identical page titles, and it is the slowest option.
+          </li>
+          <li>
+            <strong>Rewrite the question</strong> — lets the on-device model rephrase your question
+            before searching.
+          </li>
+          <li>
+            <strong>Imagine an answer first</strong> — searches using a sketch of what an answer
+            would look like, which sometimes matches documentation better than a question does.
+          </li>
+        </ul>
+        <p class="doc-note">
+          Try one at a time. If an option makes things worse for your documentation, turn it off —
+          they all degrade cleanly back to plain search.
+        </p>
+      </section>
+
+      <section id="trouble">
+        <h2>8. Troubleshooting</h2>
+        <dl class="doc-faq">
+          <dt>The crawl stopped early and mentions signing in</dt>
+          <dd>
+            The site wants a login. Sign in to it in a normal tab, then press Resume — Sherpa uses
+            the session you just established.
+          </dd>
+
+          <dt>It refuses questions I know are documented</dt>
+          <dd>
+            Check the site is fully indexed in <strong>Indexes</strong>. If the page count looks
+            low, the crawl may have been scoped too narrowly or stopped at a login. Otherwise lower
+            the refusal threshold in Settings.
+          </dd>
+
+          <dt>Answers are just lists of passages</dt>
+          <dd>
+            No writing model is available, so Sherpa is using the always-available Passages tier.
+            Add an API key in Settings for full answers.
+          </dd>
+
+          <dt>The panel says the index was built with a different model</dt>
+          <dd>
+            The search model was changed after this index was built, and the two are not comparable.
+            Re-crawl the index — Sherpa refuses to search it rather than return nonsense.
+          </dd>
+
+          <dt>Answers are slow</dt>
+          <dd>
+            Turn off <strong>Rerank results</strong> in Settings. It is by far the most expensive
+            option, and the first question after opening the panel is always slower while the index
+            loads.
+          </dd>
+
+          <dt>I want it all gone</dt>
+          <dd>
+            <strong>Settings → Delete everything</strong> erases every index, your settings and any
+            stored key. Uninstalling the extension does the same.
+          </dd>
+        </dl>
+      </section>
+
+      <footer class="doc-foot">
+        <p>
+          Sherpa runs entirely on your computer. See the
+          <a href="/src/privacy/index.html">privacy policy</a> for exactly what is stored and what
+          is sent.
+        </p>
+      </footer>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

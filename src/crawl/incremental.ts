@@ -18,3 +18,19 @@ export function shouldReindex(stored: PageVersion | undefined, fetched: PageVers
   if (stored.lastmod && fetched.lastmod) return stored.lastmod !== fetched.lastmod;
   return stored.htmlHash !== fetched.htmlHash;
 }
+
+/**
+ * Does the sparse index need rebuilding after a crawl?
+ *
+ * The BM25 blob is derived entirely from the stored chunks, so if an
+ * incremental pass re-indexed nothing — every page answered 304 or hashed
+ * identical — the existing blob is still exactly correct. Rebuilding it means
+ * re-tokenising every chunk in the index and writing several MB back to disk to
+ * produce a byte-identical result.
+ *
+ * A first crawl or a full rebuild always builds, since there is nothing to
+ * reuse.
+ */
+export function shouldRebuildSparseIndex(incremental: boolean, pagesReindexed: number): boolean {
+  return !incremental || pagesReindexed > 0;
+}

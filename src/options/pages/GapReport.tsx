@@ -50,7 +50,8 @@ export function GapReport(): JSX.Element {
     }
     void (async () => {
       const db = await openSherpaDb();
-      const floor = (await loadSettings()).floor;
+      // The gap report asks "did we answer this?", which is the refuse band.
+      const floor = (await loadSettings()).floors.refuse;
       const log = await queryLogStore.listByIndex(db, selected);
       const stats: QueryStat[] = log.map((e) => ({
         query: e.query,

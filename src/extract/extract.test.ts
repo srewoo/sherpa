@@ -109,3 +109,52 @@ describe("platform profiles (PRD 5.1.7)", () => {
     expect(text).not.toContain("On this page");
   });
 });
+
+describe("interface chrome (regression: help.mindtickle.com)", () => {
+  it("keeps a copy-button's 'Copied!' out of the title", () => {
+    // Freshdesk renders an aria-hidden confirmation inside the heading. It is
+    // never on screen when reading, but blanket un-hiding pulled it in.
+    const page = extract(
+      `<main><h1>Plays as an asset [admin] <span class="copy-link" aria-hidden="true">Copied!</span></h1>
+       <p>${"Body text. ".repeat(20)}</p></main>`,
+    );
+    expect(page.title).toBe("Plays as an asset [admin]");
+  });
+
+  it("strips the affordance even when it is not a removable element", () => {
+    expect(extract("<main><h1>Rotating API keys Copy link</h1></main>").title).toBe(
+      "Rotating API keys",
+    );
+  });
+
+  it("does not eat a title that legitimately ends in a similar word", () => {
+    expect(extract("<main><h1>How to copy a mission</h1></main>").title).toBe(
+      "How to copy a mission",
+    );
+  });
+
+  it("does not duplicate every breadcrumb crumb", () => {
+    // Querying "a, li" together counted each crumb twice, producing
+    // "Help & Support > Help & Support > Asset Hub > Asset Hub".
+    const page = extract(
+      `<nav aria-label="Breadcrumb"><ol>
+         <li><a href="/">Help &amp; Support</a></li>
+         <li><a href="/hub">Asset Hub</a></li>
+         <li><a href="/hub/admin">Admin</a></li>
+       </ol></nav>
+       <main><h1>T</h1><p>Body.</p></main>`,
+    );
+    expect(page.breadcrumb).toEqual(["Help & Support", "Asset Hub", "Admin"]);
+  });
+
+  it("still expands genuinely collapsed content (5.3.8)", () => {
+    const page = extract(
+      `<main><h1>T</h1>
+       <div class="accordion"><div hidden><p>Hidden but real procedural content.</p></div></div>
+       <details><summary>More</summary><p>Disclosure content.</p></details></main>`,
+    );
+    const text = page.blocks.map((b) => b.text).join(" ");
+    expect(text).toContain("Hidden but real procedural content.");
+    expect(text).toContain("Disclosure content.");
+  });
+});

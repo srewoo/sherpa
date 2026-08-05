@@ -58,3 +58,34 @@ describe("htmlToText", () => {
     expect(htmlToText("<p>a &amp; b &lt;c&gt;</p>")).toBe("a & b <c>");
   });
 });
+
+/**
+ * A chip that looks like a citation but scrolls nowhere is worse than no chip:
+ * it presents an unverifiable claim as sourced. Models handed five sources do
+ * write [6].
+ */
+describe("citation bounds", () => {
+  it("links a citation that has a source", () => {
+    expect(renderMarkdown("Do the thing [2].", 5)).toContain('href="#source-2"');
+  });
+
+  it("leaves a citation beyond the source list as plain text", () => {
+    const html = renderMarkdown("Do the thing [6].", 5);
+    expect(html).not.toContain("#source-6");
+    expect(html).toContain("[6]");
+  });
+
+  it("rejects [0], which no source can ever be", () => {
+    expect(renderMarkdown("Nonsense [0].", 5)).not.toContain("#source-0");
+  });
+
+  it("drops every citation when there are no sources at all", () => {
+    expect(renderMarkdown("Ungrounded [1].", 0)).not.toContain("cite");
+  });
+
+  it("still renders the surrounding markdown around a rejected citation", () => {
+    const html = renderMarkdown("1. **Step** [9]", 2);
+    expect(html).toContain("<strong>Step</strong>");
+    expect(html).toContain("<ol>");
+  });
+});

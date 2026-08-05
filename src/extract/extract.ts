@@ -26,7 +26,27 @@ const JUNK = [
   ".sidebar", ".toc", ".breadcrumb", ".breadcrumbs",
   '[class*="cookie"]', '[id*="cookie"]', '[class*="related"]',
   '[class*="helpful"]', '[class*="feedback"]', '[class*="edit-page"]',
+  // Transient interface chrome. These carry text that is never on screen at
+  // read time — a copy-link button's "Copied!" confirmation, a tooltip, a live
+  // region — and it otherwise lands inside headings and titles.
+  '[role="tooltip"]', '[role="status"]', '[role="alert"]', "[aria-live]",
+  '[class*="tooltip" i]', '[class*="toast" i]', '[class*="snackbar" i]',
+  '[class*="copy-link" i]', '[class*="copy-button" i]', '[class*="copied" i]',
+  "[data-clipboard-text]", "[data-copy]",
 ];
+
+/**
+ * Trailing interface text that survives when a copy widget is part of the
+ * heading element itself rather than a removable sibling.
+ */
+const TITLE_NOISE = /\s*(copied!?|copy link|copy|share|permalink)\s*$/i;
+
+function cleanTitle(text: string): string {
+  let out = clean(text);
+  // Twice, so "Title Copy Copied!" collapses fully.
+  for (let i = 0; i < 2; i++) out = out.replace(TITLE_NOISE, "").trim();
+  return out;
+}
 
 function clean(s: string | null | undefined): string {
   return (s ?? "").replace(/\s+/g, " ").trim();
@@ -95,27 +115,76 @@ function readabilityRoot(doc: Document): Element | null {
   }
 }
 
-/** Reveal collapsed content so it's indexed too (PRD 5.3.8). */
+/**
+ * Containers whose hidden children are genuinely collapsed *content* — an
+ * accordion, a tab panel, a disclosure — as opposed to the interface furniture
+ * that also uses `hidden`/`aria-hidden`.
+ */
+const COLLAPSIBLE = [
+  "details",
+  '[role="tabpanel"]',
+  '[class*="accordion" i]',
+  '[class*="collapse" i]',
+  '[class*="expand" i]',
+  '[class*="tab-panel" i]',
+  '[class*="tabpanel" i]',
+  '[class*="disclosure" i]',
+  '[data-accordion]',
+].join(",");
+
+/**
+ * Reveal collapsed content so it's indexed too (PRD 5.3.8).
+ *
+ * Scoped deliberately. Un-hiding every `[hidden]`/`[aria-hidden]` node in the
+ * document also reveals toast and tooltip text that is never on screen — which
+ * is how "Copied!" from a copy-link button ended up glued onto article titles.
+ * We only reveal what sits inside something that looks like a collapsible
+ * region.
+ */
 function expandCollapsed(root: Element): void {
   root.querySelectorAll("details").forEach((d) => d.setAttribute("open", ""));
-  root.querySelectorAll('[hidden], [aria-hidden="true"]').forEach((el) => {
+
+  const reveal = (el: Element): void => {
     el.removeAttribute("hidden");
     el.removeAttribute("aria-hidden");
-  });
+  };
+
+  for (const container of root.querySelectorAll(COLLAPSIBLE)) {
+    reveal(container);
+    container.querySelectorAll('[hidden], [aria-hidden="true"]').forEach(reveal);
+  }
 }
 
 function stripJunk(root: Element, extra: readonly string[]): void {
   root.querySelectorAll([...JUNK, ...extra].join(",")).forEach((el) => el.remove());
 }
 
+/**
+ * The breadcrumb trail (PRD 5.3.6).
+ *
+ * Read from `li` when the trail is a list, otherwise from `a`. Querying both
+ * double-counts every crumb, because each `li` contains its own `a` — which is
+ * what produced trails like "Help & Support › Help & Support › Asset Hub ›
+ * Asset Hub". Consecutive repeats are dropped as a second line of defence
+ * against nested markup.
+ */
 function breadcrumbOf(doc: Document): string[] {
   const nav =
     doc.querySelector('nav[aria-label*="readcrumb" i]') ??
     doc.querySelector('[class*="breadcrumb"]');
   if (!nav) return [];
-  return [...nav.querySelectorAll("a, li")]
-    .map((el) => clean(el.textContent))
-    .filter((t) => t.length > 0 && t !== "/");
+
+  const items = nav.querySelectorAll("li");
+  const source = items.length > 0 ? items : nav.querySelectorAll("a");
+
+  const crumbs: string[] = [];
+  for (const el of source) {
+    const text = clean(el.textContent);
+    if (text === "" || text === "/" || text === "›" || text === ">") continue;
+    if (crumbs[crumbs.length - 1] === text) continue;
+    crumbs.push(text);
+  }
+  return crumbs;
 }
 
 function codeBlock(pre: Element): Block {
@@ -156,7 +225,7 @@ function walk(node: Element, out: Block[]): void {
   for (const child of [...node.children]) {
     const tag = child.tagName.toLowerCase();
     if (/^h[1-6]$/.test(tag)) {
-      const text = clean(child.textContent);
+      const text = cleanTitle(child.textContent ?? "");
       const anchor = child.getAttribute("id");
       if (text) out.push({ type: "heading", level: Number(tag[1]), text, ...(anchor ? { anchor } : {}) });
     } else if (tag === "pre") {
@@ -179,7 +248,7 @@ function walk(node: Element, out: Block[]): void {
 export function extractPage(doc: Document, baseUrl: string, platform?: Platform): ExtractedPage {
   const detected = platform ?? detectPlatform(doc);
   const profile = profileFor(detected);
-  const title = clean(doc.querySelector("h1")?.textContent) || clean(doc.title);
+  const title = cleanTitle(doc.querySelector("h1")?.textContent ?? "") || cleanTitle(doc.title);
   const canonicalHref = doc.querySelector('link[rel="canonical"]')?.getAttribute("href");
   const lastmod =
     doc.querySelector('meta[property="article:modified_time"]')?.getAttribute("content") ??

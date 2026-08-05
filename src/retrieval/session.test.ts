@@ -5,7 +5,7 @@ import { chunkStore } from "@/storage/chunks.js";
 import { vectorStore } from "@/storage/vectors.js";
 import { bm25Store } from "@/storage/bm25Store.js";
 import type { StoredChunk } from "@/domain/records.js";
-import { Bm25Index } from "./bm25.js";
+import { FieldedBm25Index } from "./fieldedBm25.js";
 import { loadSession, invalidateSession } from "./session.js";
 import { retrieve } from "./retrieve.js";
 
@@ -66,15 +66,15 @@ describe("bm25 persistence (5.5.4)", () => {
     const db = await freshDb();
     await seedIndex(db);
     const docs = [
-      { id: 0, text: "rotate an api key" },
-      { id: 1, text: "configure sso sandbox" },
+      { id: 0, title: "API keys", section: "Admin", content: "rotate an api key" },
+      { id: 1, title: "SSO", section: "Admin", content: "configure sso sandbox" },
     ];
     await bm25Store.build(db, "i", docs);
 
     const loaded = await bm25Store.load(db, "i");
     expect(loaded).toBeDefined();
     // Same ranking as an index built fresh from the same documents.
-    expect(loaded!.search("sandbox", 5)).toEqual(new Bm25Index(docs).search("sandbox", 5));
+    expect(loaded!.search("sandbox", 5)).toEqual(FieldedBm25Index.build(docs).search("sandbox", 5));
   });
 
   it("returns undefined when nothing was ever built", async () => {
@@ -128,14 +128,17 @@ describe("retrieve over a session", () => {
     await seedIndex(db);
     const result = await retrieve({ db, indexId: "i", embedder }, "sso for a sandbox tenant");
 
-    const direct = result.chunks.filter((c) => !c.viaNeighbour);
-    expect(direct[0]?.vectorId).toBe(1);
+    const top = result.articles[0];
+    expect(top?.url).toBe("https://d/sso");
+    // The chunk that matched is the one the query was aimed at.
+    expect(top?.chunks.find((c) => c.vectorId === 1)?.viaNeighbour).toBe(false);
     expect(result.topScore).toBeCloseTo(1, 5);
     // Its sibling on the same page comes along so the procedure stays whole.
-    expect(result.chunks.some((c) => c.vectorId === 2 && c.viaNeighbour)).toBe(true);
+    expect(top?.chunks.map((c) => c.vectorId)).toContain(2);
+    expect(top?.body).toContain("then verify the audience url");
   });
 
-  it("caps direct hits per page so one article can't fill the context (5.7.4)", async () => {
+  it("returns one article per page however many of its chunks matched (5.7.4)", async () => {
     const db = await freshDb();
     const flat = new Float32Array(4 * DIM);
     for (let i = 0; i < 4; i++) flat.set(vec(1), i * DIM); // all equally relevant
@@ -148,14 +151,18 @@ describe("retrieve over a session", () => {
     ]);
 
     const result = await retrieve({ db, indexId: "i", embedder }, "sandbox");
-    const fromLong = result.chunks.filter((c) => !c.viaNeighbour && c.url === "https://d/long");
-    expect(fromLong.length).toBeLessThanOrEqual(2);
+    // Grouping replaces the old per-page cap: the long page appears once, and
+    // all three of its matched chunks inform the answer.
+    const urls = result.articles.map((a) => a.url);
+    expect(urls).toEqual([...new Set(urls)]);
+    const long = result.articles.find((a) => a.url === "https://d/long");
+    expect(long?.chunks.filter((c) => !c.viaNeighbour).length).toBe(3);
   });
 
   it("returns empty for an index with no vectors", async () => {
     const db = await freshDb();
     const result = await retrieve({ db, indexId: "empty", embedder }, "anything");
-    expect(result.chunks).toEqual([]);
+    expect(result.articles).toEqual([]);
     expect(result.topScore).toBe(0);
   });
 });

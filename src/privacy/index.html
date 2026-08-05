@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sherpa — Privacy</title>
+  </head>
+  <body class="in-doc">
+    <div class="doc">
+      <header class="doc-head">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 20 L9.5 7 L13 14 L15.5 9 L21 20 Z" />
+            <path d="M8 20 L11 14.5" />
+          </svg>
+          <span class="brand-name">Sherpa</span>
+        </div>
+        <nav class="doc-nav">
+          <a href="/src/help/index.html">Help</a>
+        </nav>
+      </header>
+
+      <h1>Privacy policy</h1>
+      <p class="doc-lede">
+        Sherpa indexes a documentation site you choose and answers your questions from it. It runs
+        entirely on your computer.
+      </p>
+      <p class="doc-meta">Last updated: 3 August 2026</p>
+
+      <section>
+        <h2>What we collect</h2>
+        <p class="doc-callout">
+          <strong>Nothing.</strong> Sherpa has no server, no accounts, no analytics and no
+          telemetry. No data about you or your usage is transmitted to us, because there is nowhere
+          for it to be transmitted to.
+        </p>
+      </section>
+
+      <section>
+        <h2>What Sherpa stores, and where</h2>
+        <p>All of it stays in your browser's local storage on your own device:</p>
+        <ul>
+          <li>
+            <strong>Page content from sites you index</strong> — the text of the pages you asked
+            Sherpa to crawl, plus the numeric vectors and search index derived from it.
+          </li>
+          <li>
+            <strong>Your settings</strong> — which site is active, the answering mode, the
+            confidence thresholds, and (if you configure one) your API key.
+          </li>
+          <li><strong>Your conversations</strong> — the last 50, so you can return to an earlier answer.</li>
+          <li>
+            <strong>Your queries</strong> — logged locally to build the content gap report, which
+            shows which questions the documentation failed to answer.
+          </li>
+        </ul>
+        <p>
+          You can delete any single index, or erase everything Sherpa holds, from
+          <strong>Settings → Delete everything</strong>. Uninstalling the extension also removes it
+          all.
+        </p>
+      </section>
+
+      <section>
+        <h2>Network requests Sherpa makes</h2>
+        <ol>
+          <li>
+            <strong>The site you asked it to index.</strong> Sherpa fetches those pages using your
+            existing browser session, which is how it can reach documentation that requires you to
+            be signed in. It requests permission for that one site at the moment you start a crawl,
+            and holds no access to any other site.
+          </li>
+          <li>
+            <strong>Nothing else.</strong> The embedding model and its runtime are bundled inside
+            the extension rather than downloaded, so even the first index makes no request to us or
+            to any third party.
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>The one exception: bring your own key</h2>
+        <p>Sherpa's default answering mode runs on your device and sends nothing anywhere.</p>
+        <p>
+          If you choose to configure your own API key (OpenAI, Anthropic or Google), then for each
+          question you ask, your question and the relevant passages retrieved from your index are
+          sent to that provider so it can write the answer. This is off by default, the interface
+          warns you before you enable it, and your key is stored only on your device and sent only
+          to the provider you chose.
+        </p>
+        <p>Your use of that provider is governed by their privacy policy, not this one.</p>
+      </section>
+
+      <section>
+        <h2>Your credentials</h2>
+        <p>
+          Sherpa never sees, requests or stores your username or password for any site. It reuses
+          the session your browser already has. If a site requires you to sign in, Sherpa pauses and
+          asks you to sign in through the site itself.
+        </p>
+      </section>
+
+      <section>
+        <h2>Children</h2>
+        <p>
+          Sherpa is a developer and support tool. It is not directed at children and collects no
+          personal information from anyone.
+        </p>
+      </section>
+
+      <section>
+        <h2>Changes</h2>
+        <p>
+          Any change to this policy will be published with a new "last updated" date before it takes
+          effect.
+        </p>
+      </section>
+
+      <section>
+        <h2>Contact</h2>
+        <p>
+          Questions about this policy:
+          <a href="mailto:sharaj.rewoo@mindtickle.com">sharaj.rewoo@mindtickle.com</a>
+        </p>
+      </section>
+
+      <footer class="doc-foot">
+        <p>New to Sherpa? The <a href="/src/help/index.html">help page</a> walks through what it does.</p>
+      </footer>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

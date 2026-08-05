@@ -1,0 +1,26 @@
+{"question":"how do I set up SAML single sign-on","answerUrls":["https://help.acme.test/admin/sso/setup"]}
+{"question":"configure SSO for a sandbox tenant","answerUrls":["https://help.acme.test/admin/sso/sandbox"]}
+{"question":"what does AUTH-403 mean","answerUrls":["https://help.acme.test/admin/sso/troubleshooting"]}
+{"question":"audience URI mismatch after enabling sso","answerUrls":["https://help.acme.test/admin/sso/troubleshooting"]}
+{"question":"avoid locking myself out when enforcing sso","answerUrls":["https://help.acme.test/admin/sso/setup"]}
+{"question":"why did my import fail silently","answerUrls":["https://help.acme.test/data/import-troubleshooting"]}
+{"question":"import skipped rows without an error","answerUrls":["https://help.acme.test/data/import-troubleshooting"]}
+{"question":"difference between skipped rows and validation failure","answerUrls":["https://help.acme.test/data/import-troubleshooting"]}
+{"question":"how many times is a webhook retried","answerUrls":["https://help.acme.test/api/webhooks"]}
+{"question":"verify a webhook payload is authentic","answerUrls":["https://help.acme.test/api/webhooks"]}
+{"question":"rotate an api key without breaking integrations","answerUrls":["https://help.acme.test/api/keys"]}
+{"question":"how long is the api key overlap window","answerUrls":["https://help.acme.test/api/keys"]}
+{"question":"does adding a user cost money immediately","answerUrls":["https://help.acme.test/billing/seats"]}
+{"question":"download an invoice as PDF","answerUrls":["https://help.acme.test/billing/invoices"]}
+{"question":"export invoices for a date range","answerUrls":["https://help.acme.test/billing/invoices"]}
+{"question":"upload a CSV to import data","answerUrls":["https://help.acme.test/data/import"]}
+{"question":"how do I delete my account permanently","answerUrls":[]}
+{"question":"what is the SLA for enterprise support","answerUrls":[]}
+{"question":"does the product work offline on mobile","answerUrls":[]}
+{"question":"how do I configure SCIM user provisioning","answerUrls":[]}
+{"question":"what is the maximum file size for attachments","answerUrls":[]}
+{"question":"can I self-host the application","answerUrls":[]}
+{"question":"how do I request a SOC 2 report","answerUrls":[]}
+{"question":"what regions is data stored in","answerUrls":[]}
+{"question":"how do I set up two-factor authentication","answerUrls":[]}
+{"question":"is there a Terraform provider","answerUrls":[]}

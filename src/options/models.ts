@@ -1,10 +1,19 @@
 /** BYOK model choices per provider (PRD 5.8.6). */
 import type { ByokProvider } from "@/domain/generator.js";
 
+/**
+ * Most capable first in each list, because the first entry is what a provider
+ * switch selects — and the reason to configure BYOK at all is that the
+ * on-device model can't finish a long procedure.
+ *
+ * Anthropic IDs are the exact alias strings; a date suffix is not appended
+ * (`claude-haiku-4-5`, never `claude-haiku-4-5-20251001`) — the suffixed form
+ * was here before and is not the documented alias.
+ */
 export const PROVIDER_MODELS: Record<ByokProvider, readonly string[]> = {
-  openai: ["gpt-4o-mini", "gpt-4o", "o4-mini"],
-  anthropic: ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"],
-  gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+  openai: ["gpt-4o", "gpt-4o-mini", "o4-mini"],
+  anthropic: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash"],
 };
 
 export const PROVIDERS: readonly ByokProvider[] = ["openai", "anthropic", "gemini"];

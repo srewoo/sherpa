@@ -25,6 +25,67 @@ export function needsRender(wordTotal: number, min = MIN_WORDS): boolean {
 }
 
 /**
+ * Budget for the render fallback across one crawl.
+ *
+ * Rendering opens a background tab, waits for load, waits another 1.5s to
+ * settle, injects a script and closes it — a few seconds of browser-wide churn
+ * per page. That is a fair price for the handful of JS-rendered pages it was
+ * built for, and ruinous when *every* page trips the heuristic: a login-gated
+ * or unusually-marked-up site extracts under 50 words everywhere, and a
+ * 1,400-page crawl then opens 1,400 tabs. The browser feels broken, and none of
+ * it helps.
+ *
+ * So the fallback gets a budget and gives up when it stops paying. The tracker
+ * is per crawl, not global — a site that genuinely needs rendering gets its
+ * full allowance on every run.
+ */
+export interface RenderBudget {
+  /** Hard ceiling on renders per crawl, however well they work. */
+  readonly max: number;
+  /** Give up after this many consecutive renders that returned nothing better. */
+  readonly maxConsecutiveFailures: number;
+}
+
+export const DEFAULT_RENDER_BUDGET: RenderBudget = { max: 50, maxConsecutiveFailures: 5 };
+
+export class RenderTracker {
+  private used = 0;
+  private consecutiveFailures = 0;
+  private abandoned = false;
+
+  constructor(private readonly budget: RenderBudget = DEFAULT_RENDER_BUDGET) {}
+
+  /** Should we spend a render on this page? */
+  allows(): boolean {
+    return !this.abandoned && this.used < this.budget.max;
+  }
+
+  /**
+   * Record the outcome. "Helped" means the rendered DOM actually yielded more
+   * text than the raw fetch — a render that returns the same empty shell is a
+   * failure even though nothing threw.
+   */
+  record(helped: boolean): void {
+    this.used += 1;
+    if (helped) {
+      this.consecutiveFailures = 0;
+      return;
+    }
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= this.budget.maxConsecutiveFailures) this.abandoned = true;
+  }
+
+  /** True once the fallback has been switched off for this crawl. */
+  get givenUp(): boolean {
+    return this.abandoned;
+  }
+
+  get rendersUsed(): number {
+    return this.used;
+  }
+}
+
+/**
  * Ask for `url` to be rendered and return the settled DOM.
  *
  * The crawl runs in the offscreen document, which may only use

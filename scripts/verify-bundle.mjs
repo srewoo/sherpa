@@ -59,8 +59,18 @@ check(
   wasmFiles.length > 0,
   "dist/ort: no .wasm binaries bundled — run scripts/copy-ort.mjs before building",
 );
+check(
+  wasmFiles.includes("ort-wasm-simd.wasm") && wasmFiles.includes("ort-wasm.wasm"),
+  "dist/ort: both the SIMD build and the plain fallback must ship",
+);
+// Threading needs COOP/COEP, which extension pages don't have, so a threaded
+// binary can never load — it would be ~10 MB of dead weight in the package.
+check(
+  !wasmFiles.some((f) => f.includes("threaded")),
+  "dist/ort: threaded ORT builds cannot run in an extension page; don't ship them",
+);
 
-const modelDir = join(dist, "models", "Xenova", "all-MiniLM-L6-v2");
+const modelDir = join(dist, "models", "Xenova", "bge-small-en-v1.5");
 check(await exists(join(modelDir, "onnx", "model_quantized.onnx")), "dist/models: model weights missing");
 check(await exists(join(modelDir, "tokenizer.json")), "dist/models: tokenizer missing");
 check(await exists(join(modelDir, "config.json")), "dist/models: config missing");
@@ -96,6 +106,58 @@ check(sawWasmPathOverride, "bundle: env.backends.onnx.wasm.wasmPaths is never se
 check(sawLocalModelPath, "bundle: env.localModelPath is never set — weights will be fetched from Hugging Face");
 
 // ----------------------------------------------------------------- verdict
+/**
+ * Zero egress (PRD 5.10.1) is the product's central claim, and until now nothing
+ * checked it. A `<link>` to fonts.googleapis.com sat in both entry points for
+ * the life of the project: a render-blocking third-party request on every panel
+ * open, and a privacy promise broken on every page load. Neither unit tests nor
+ * a CSP check can see it — `script-src 'self'` blocks remote *scripts*, not
+ * remote stylesheets, fonts or images.
+ *
+ * So HTML and CSS are scanned for absolute http(s) references. Those two are
+ * scanned and JS is not, deliberately: a URL in markup is a fetch the browser
+ * performs unconditionally on load, while a URL in a bundle is a string that
+ * may never be called — transformers.js carries CDN fallbacks it never reaches
+ * once `wasmPaths` and `localModelPath` are set, which the checks above already
+ * assert. Scanning JS too would mean an allowlist long enough that a real
+ * regression could hide in it.
+ */
+/**
+ * XML namespaces only. `xmlns="http://www.w3.org/2000/svg"` appears inside the
+ * inline SVG data-URIs in the stylesheet; a namespace is an identifier the
+ * parser compares as a string and never resolves, so it generates no request.
+ * Nothing else is permitted — a fetchable remote origin in markup is the bug
+ * this check exists to catch.
+ */
+const REMOTE_ALLOWED = new Set(["http://www.w3.org", "https://www.w3.org"]);
+
+async function* walk(dir) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walk(full);
+    else yield full;
+  }
+}
+
+const remoteHits = [];
+for await (const file of walk(dist)) {
+  if (!/\.(html|css)$/.test(file)) continue;
+  const text = await readFile(file, "utf8");
+  for (const match of text.matchAll(/https?:\/\/[a-z0-9.-]+/gi)) {
+    const origin = match[0];
+    // Exact match, not a prefix: `startsWith("https://www.w3.org")` would also
+    // wave through `https://www.w3.org.example.com`.
+    if (REMOTE_ALLOWED.has(origin)) continue;
+    remoteHits.push(`${file.slice(dist.length + 1)} → ${origin}`);
+  }
+}
+
+check(
+  remoteHits.length === 0,
+  "dist: remote origin referenced in shipped assets — this breaks the zero-egress promise:\n  " +
+    [...new Set(remoteHits)].slice(0, 10).join("\n  "),
+);
+
 if (failures.length > 0) {
   console.error("verify-bundle: FAILED\n");
   for (const f of failures) console.error(`  ✗ ${f}`);
@@ -103,5 +165,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `verify-bundle: ok — CSP allows wasm, ${wasmFiles.length} runtime binaries and the model ship locally`,
+  `verify-bundle: ok — CSP allows wasm, ${wasmFiles.length} runtime binaries and the model ship locally, no remote origins`,
 );

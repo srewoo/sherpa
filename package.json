@@ -1,17 +1,27 @@
 {
   "name": "sherpa",
   "version": "0.1.0",
-  "description": "Local-first help-site answer engine — a Chrome MV3 extension that crawls a documentation site, indexes it in the browser, and answers questions from that index with zero servers.",
+  "description": "Local-first help-site answer engine \u2014 a Chrome MV3 extension that crawls a documentation site, indexes it in the browser, and answers questions from that index with zero servers.",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "node scripts/copy-ort.mjs && vite",
-    "build": "node scripts/copy-ort.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/copy-ort.mjs && tsc --noEmit && vite build && node scripts/verify-bundle.mjs && node scripts/package.mjs",
     "fetch:model": "node scripts/fetch-model.mjs",
     "bench": "vitest run --config vitest.bench.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "node scripts/package.mjs",
+    "assets": "node scripts/render-assets.mjs",
+    "capture:screenshots": "node scripts/capture-screenshots.mjs",
+    "shots:fit": "node scripts/fit-screenshots.mjs",
+    "eval": "vitest run --config vitest.eval.config.ts",
+    "fetch:reranker": "node scripts/fetch-reranker.mjs",
+    "eval:corpus": "vitest run --config vitest.eval.config.ts src/eval/buildCorpus.eval.ts",
+    "eval:fixture": "vitest run --config vitest.eval.config.ts src/eval/fixtureExport.eval.ts",
+    "eval:sites": "vitest run --config vitest.eval.config.ts src/eval/multiSite.eval.ts",
+    "eval:rerank": "vitest run --config vitest.eval.config.ts src/eval/rerankAblation.eval.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",

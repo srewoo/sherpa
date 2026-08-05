@@ -160,7 +160,7 @@ describe("full re-crawl (PRD 5.6.4)", () => {
         contentHash: "h",
       },
     ]);
-    await bm25Store.build(db, "i", [{ id: 0, text: "t" }]);
+    await bm25Store.build(db, "i", [{ id: 0, title: "T", section: "S", content: "t" }]);
     await frontier.seed(db, "i", [{ url: "https://docs.x.com/a", depth: 0 }]);
 
     await indexRepo.clearContent(db, "i");

@@ -49,10 +49,30 @@ function pushHeading(stack: HeadingFrame[], block: Block): void {
   stack.push({ level, text: block.text.trim(), anchor: block.anchor });
 }
 
+/**
+ * The breadcrumb + heading path prefixed to every chunk's embedded text
+ * (PRD 5.4.4).
+ *
+ * Consecutive repeats are collapsed, and for good reason: a site whose
+ * breadcrumb markup double-counts its crumbs, or whose breadcrumb ends with the
+ * same word the first heading starts with, prefixes *every chunk in the index*
+ * with the same run of boilerplate — "Help & Support > Help & Support > Help
+ * Center Home > Help Center Home > …". Mean-pooled into a 384-dim vector that
+ * boilerplate dilutes the content signal and pulls every chunk toward the same
+ * point, which flattens the score range and buries the article that actually
+ * answers the question.
+ */
 function pathString(ctx: PageContext, stack: readonly HeadingFrame[]): string {
-  return [...ctx.breadcrumb, ...stack.map((h) => h.text)]
-    .filter(Boolean)
-    .join(" > ");
+  const parts = [...ctx.breadcrumb, ...stack.map((h) => h.text)]
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const deduped: string[] = [];
+  for (const part of parts) {
+    if (deduped[deduped.length - 1]?.toLowerCase() === part.toLowerCase()) continue;
+    deduped.push(part);
+  }
+  return deduped.join(" > ");
 }
 
 function splitSentences(text: string): string[] {

@@ -13,10 +13,26 @@ export const hasExtension =
 
 let counter = 0;
 
+/** The page the user is reading, so retrieval can favour its section. */
+async function activeTabUrl(): Promise<string | undefined> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab?.url && /^https?:/.test(tab.url) ? tab.url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function askQuery(
   indexId: string,
   query: string,
   onEvent: (event: PanelEvent) => void,
+  /**
+   * Earlier questions, most recent first. Retrieval resolves a follow-up
+   * against them — without this the panel shows the context on screen and the
+   * search cannot see it.
+   */
+  recentQuestions: readonly string[] = [],
 ): void {
   const requestId = `q-${(counter += 1)}`;
   const listener = (msg: unknown): void => {
@@ -27,9 +43,19 @@ export function askQuery(
   };
   chrome.runtime.onMessage.addListener(listener);
   // Make sure the offscreen doc is alive, then ask.
-  void chrome.runtime.sendMessage({ type: "ensure-offscreen" }).finally(() => {
-    void chrome.runtime.sendMessage({ type: "query/ask", requestId, indexId, query });
-  });
+  void chrome.runtime
+    .sendMessage({ type: "ensure-offscreen" })
+    .then(() => activeTabUrl())
+    .then((currentUrl) => {
+      void chrome.runtime.sendMessage({
+        type: "query/ask",
+        requestId,
+        indexId,
+        query,
+        currentUrl,
+        recentQuestions,
+      });
+    });
 }
 
 /** Record 👍/👎 against the logged query, feeding the gap report (PRD 5.9.8). */
@@ -49,4 +75,27 @@ export function requestRefresh(indexId: string): void {
   void chrome.runtime.sendMessage({ type: "ensure-offscreen" }).finally(() => {
     void chrome.runtime.sendMessage({ type: "crawl/recrawl", indexId });
   });
+}
+
+/** Rebuild an index from scratch — needed after an embedding-model change. */
+export function requestFullRecrawl(indexId: string): void {
+  if (!hasExtension) return;
+  void chrome.runtime.sendMessage({ type: "ensure-offscreen" }).finally(() => {
+    void chrome.runtime.sendMessage({ type: "crawl/recrawl-full", indexId });
+  });
+}
+
+/**
+ * Open the options page — crawl setup, indexes, gap report, settings.
+ *
+ * The panel is the only surface most users ever see, so without this the whole
+ * of Options is reachable only through chrome://extensions.
+ */
+export function openOptions(hash?: string): void {
+  if (!hasExtension) return;
+  if (hash) {
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`src/options/index.html#${hash}`) });
+    return;
+  }
+  chrome.runtime.openOptionsPage();
 }

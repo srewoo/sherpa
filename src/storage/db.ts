@@ -49,6 +49,12 @@ function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number, transaction: Up
     const chunks = transaction.objectStore("chunks");
     if (!chunks.indexNames.contains("byUrl")) chunks.createIndex("byUrl", ["indexId", "url"]);
   }
+  if (oldVersion < 4) {
+    // Chat history (PRD 5.9.9).
+    const sessions = db.createObjectStore("chatSessions", { keyPath: "id" });
+    sessions.createIndex("byIndex", "indexId");
+    sessions.createIndex("byUpdated", "updatedAt");
+  }
 }
 
 /**

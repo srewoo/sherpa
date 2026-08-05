@@ -6,6 +6,7 @@
 import type { CrawlConfig } from "@/domain/config.js";
 import type { CrawlPreview } from "@/crawl/preview.js";
 import type { PanelEvent } from "@/shared/answer.js";
+import type { ImportProgress } from "@/offscreen/importCorpusJob.js";
 
 export interface CrawlProgress {
   readonly fetched: number;
@@ -17,6 +18,10 @@ export interface CrawlProgress {
   readonly phase: "idle" | "discovering" | "crawling" | "embedding" | "paused" | "done" | "error";
   /** Set when the crawl is blocked on authentication (PRD 5.2.8). */
   readonly authWall?: { host: string; blocked: number; kind: "session" | "basic" };
+  /** Set while a final retry pass over transient failures is running (5.2.5). */
+  readonly retrying?: number;
+  /** Pages a 304 confirmed unchanged during an incremental recrawl (5.6.5). */
+  readonly unchanged?: number;
 }
 
 export type Message =
@@ -24,8 +29,39 @@ export type Message =
   /** Dry run: discover + count + estimate, fetch nothing (PRD 5.1.4). */
   | { readonly type: "crawl/preview"; readonly requestId: string; readonly config: CrawlConfig }
   | { readonly type: "crawl/preview-result"; readonly requestId: string; readonly preview: CrawlPreview | null; readonly error?: string }
-  | { readonly type: "crawl/recrawl"; readonly indexId: string }
-  | { readonly type: "crawl/recrawl-full"; readonly indexId: string }
+  | {
+      readonly type: "crawl/recrawl";
+      readonly indexId: string;
+      /**
+       * A scheduled refresh rather than one the user asked for. Runs throttled,
+       * and yields the machine back the moment the user returns (5.6.6).
+       */
+      readonly background?: boolean;
+    }
+  /**
+   * The user came back to the keyboard: pause the crawl *if* it is a background
+   * one. A crawl the user started and is watching must not be touched, which is
+   * why this is a distinct message rather than a plain `crawl/pause`.
+   */
+  | { readonly type: "crawl/yield" }
+  /** The machine went idle again: resume a background crawl we previously yielded. */
+  | { readonly type: "crawl/unyield" }
+  | {
+      readonly type: "crawl/recrawl-full";
+      readonly indexId: string;
+      /** Edited settings for this re-crawl; the stored config is reused when absent. */
+      readonly config?: CrawlConfig;
+    }
+  /**
+   * Rebuild an index from an exported corpus instead of crawling.
+   *
+   * The corpus travels as a blob URL rather than in the message: an export of a
+   * 1,400-page site is several megabytes, and extension pages share an origin
+   * so the offscreen document can fetch a URL the options page created. The
+   * options page must stay open until the import finishes — it owns the blob.
+   */
+  | { readonly type: "index/import"; readonly url: string }
+  | { readonly type: "index/import-progress"; readonly progress: ImportProgress }
   | { readonly type: "crawl/pause" }
   | { readonly type: "crawl/resume" }
   | { readonly type: "crawl/progress"; readonly progress: CrawlProgress }
@@ -35,7 +71,21 @@ export type Message =
   /** Offscreen → worker: render a JS-heavy page in a tab (PRD 5.2.11). */
   | { readonly type: "render/page"; readonly url: string }
   | { readonly type: "panel/open" }
-  | { readonly type: "query/ask"; readonly requestId: string; readonly indexId: string; readonly query: string }
+  | {
+      readonly type: "query/ask";
+      readonly requestId: string;
+      readonly indexId: string;
+      readonly query: string;
+      /** The page the user is reading, for the section boost (PRD 5.7). */
+      readonly currentUrl?: string;
+      /**
+       * Earlier questions in this conversation, most recent first. Retrieval
+       * uses them to resolve a follow-up ("and for admins?") against the turn
+       * it depends on — without them the panel shows the context and the search
+       * cannot see it.
+       */
+      readonly recentQuestions?: readonly string[];
+    }
   | { readonly type: "query/event"; readonly requestId: string; readonly event: PanelEvent };
 
 /** Narrowing helper so listeners can switch on `msg.type` exhaustively. */

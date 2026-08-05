@@ -17,6 +17,16 @@ export interface ByokConfig {
 
 const SYSTEM = "You are a documentation assistant. Answer strictly from the provided context and cite sources as [n].";
 
+/**
+ * Output ceiling for a BYOK answer.
+ *
+ * Was 1,024 — enough for a paragraph, and not enough for the multi-step
+ * procedures that are most of a help centre. A truncated answer looks complete,
+ * which is the failure mode this whole tier exists to avoid; the tokens are the
+ * user's own and they chose to spend them.
+ */
+const MAX_ANSWER_TOKENS = 4096;
+
 async function* sseData(res: Response): AsyncIterable<string> {
   if (!res.ok || !res.body) throw new Error(`provider error ${res.status}`);
   const reader = res.body.getReader();
@@ -58,7 +68,7 @@ function request(cfg: ByokConfig, prompt: string): Request {
       },
       body: JSON.stringify({
         model: cfg.model,
-        max_tokens: 1024,
+        max_tokens: MAX_ANSWER_TOKENS,
         stream: true,
         system: SYSTEM,
         messages: [{ role: "user", content: prompt }],
@@ -114,5 +124,22 @@ export class ByokGenerator implements AnswerGenerator {
       const delta = extractDelta(this.cfg.provider, data);
       if (delta) yield { delta };
     }
+  }
+
+  /**
+   * A short prompt with no grounding, for query understanding.
+   *
+   * Reuses the same streaming request the answer path uses and joins the
+   * pieces, rather than adding a second per-provider request shape to keep in
+   * step. These prompts produce a sentence or two, so the streaming overhead is
+   * irrelevant and the saving in duplicated provider quirks is not.
+   */
+  async complete(prompt: string): Promise<string> {
+    const res = await fetch(request(this.cfg, prompt));
+    let out = "";
+    for await (const data of sseData(res)) {
+      out += extractDelta(this.cfg.provider, data) ?? "";
+    }
+    return out.trim();
   }
 }

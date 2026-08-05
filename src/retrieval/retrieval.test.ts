@@ -71,17 +71,22 @@ describe("retrieve (hybrid)", () => {
       "rotate api key",
     );
 
-    expect(res.chunks[0]?.vectorId).toBe(1);
-    expect(res.chunks[0]?.viaNeighbour).toBe(false);
+    // The page holding the best chunk ranks first, as one article.
+    const top = res.articles[0];
+    expect(top?.url).toBe("https://d/x");
     expect(res.topScore).toBeGreaterThan(0);
-    // c0 is the adjacent chunk of the same page → included as a neighbour.
-    const c0 = res.chunks.find((c) => c.vectorId === 0);
-    expect(c0?.viaNeighbour).toBe(true);
+
+    // Chunks come back in document order, and the matched one is present.
+    expect(top?.chunks.map((c) => c.vectorId)).toEqual([0, 1]);
+    expect(top?.chunks.find((c) => c.vectorId === 1)?.viaNeighbour).toBe(false);
+    // Its page neighbour is carried along so the passage stays contiguous.
+    expect(top?.body).toContain("beta rotate api key");
+    expect(top?.body).toContain("alpha bulk import failed");
   });
 
   it("returns empty for an index with no vectors", async () => {
     const db = await freshDb();
     const res = await retrieve({ db, indexId: "empty", embedder: embedderFor([1, 0, 0, 0]) }, "q");
-    expect(res).toEqual({ chunks: [], topScore: 0 });
+    expect(res).toEqual({ articles: [], topScore: 0, denseAvailable: true });
   });
 });

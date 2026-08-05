@@ -77,7 +77,16 @@ beforeAll(async () => {
 
   await vectorStore.append(db, INDEX, flat, FIXTURE_DIM);
   await chunkStore.putBatch(db, chunks);
-  await bm25Store.build(db, INDEX, chunks.map((c) => ({ id: c.vectorId, text: c.text })));
+  await bm25Store.build(
+    db,
+    INDEX,
+    chunks.map((c) => ({
+      id: c.vectorId,
+      title: c.title,
+      section: c.headingPath,
+      content: c.body,
+    })),
+  );
 }, 180_000);
 
 describe("retrieval performance at 15k chunks", () => {

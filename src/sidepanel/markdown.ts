@@ -23,14 +23,26 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ESCAPES[c] ?? c);
 }
 
-/** Inline: code spans, bold, italics, then citation markers. */
-function inline(escaped: string): string {
+/**
+ * Inline: code spans, bold, italics, then citation markers.
+ *
+ * `sourceCount` bounds which markers become chips. A model handed five sources
+ * will sometimes still write `[6]`, and linking it produced a chip that looked
+ * like every other citation but scrolled nowhere — a citation that cannot be
+ * checked is worse than no citation. Out-of-range markers are dropped to plain
+ * text, so the claim stands unattributed rather than falsely attributed.
+ */
+function inline(escaped: string, sourceCount: number): string {
   return escaped
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
     // [1] → a citation chip the panel can scroll to its source card.
-    .replace(/\[(\d{1,2})\]/g, '<a class="cite" href="#source-$1" data-cite="$1">$1</a>');
+    .replace(/\[(\d{1,2})\]/g, (whole, n: string) => {
+      const index = Number(n);
+      if (index < 1 || index > sourceCount) return whole;
+      return `<a class="cite" href="#source-${index}" data-cite="${index}">${index}</a>`;
+    });
 }
 
 interface ListState {
@@ -48,7 +60,7 @@ function closeList(out: string[], state: ListState): void {
  * Render a markdown subset: fenced code, ordered/unordered lists, paragraphs.
  * Called on every stream tick, so it stays a single linear pass.
  */
-export function renderMarkdown(markdown: string): string {
+export function renderMarkdown(markdown: string, sourceCount = 99): string {
   const lines = escapeHtml(markdown).split("\n");
   const out: string[] = [];
   const state: ListState = { open: null };
@@ -86,7 +98,7 @@ export function renderMarkdown(markdown: string): string {
         out.push("<ol>");
         state.open = "ol";
       }
-      out.push(`<li>${inline(ordered[1] ?? "")}</li>`);
+      out.push(`<li>${inline(ordered[1] ?? "", sourceCount)}</li>`);
       continue;
     }
 
@@ -97,12 +109,12 @@ export function renderMarkdown(markdown: string): string {
         out.push("<ul>");
         state.open = "ul";
       }
-      out.push(`<li>${inline(bullet[1] ?? "")}</li>`);
+      out.push(`<li>${inline(bullet[1] ?? "", sourceCount)}</li>`);
       continue;
     }
 
     closeList(out, state);
-    out.push(`<p>${inline(line)}</p>`);
+    out.push(`<p>${inline(line, sourceCount)}</p>`);
   }
 
   // An unterminated fence mid-stream still shows the code it has so far.

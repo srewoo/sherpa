@@ -1,6 +1,9 @@
 /** View models for the side-panel chat (PRD 5.9). UI-only shapes. */
 
 import type { AnswerTier } from "@/domain/generator.js";
+import type { RefusalReason } from "@/generator/answerService.js";
+import type { Certainty } from "@/retrieval/confidence.js";
+import type { DisambiguationOption } from "@/retrieval/disambiguate.js";
 
 export interface SourceView {
   /** 1-based citation number, matching the `[n]` markers in the answer. */
@@ -24,8 +27,20 @@ export type AnswerState =
       readonly sources: readonly SourceView[];
       /** True while tokens are still streaming. */
       readonly pending?: boolean;
+      /** Set when the answering tier isn't the one selected in Settings. */
+      readonly notice?: string;
+      /** "uncertain" when the match was middling; the panel shows a caveat. */
+      readonly certainty?: Certainty;
     }
-  | { readonly kind: "refusal"; readonly nearest: readonly SourceView[] };
+  | {
+      readonly kind: "disambiguation";
+      readonly options: readonly DisambiguationOption[];
+    }
+  | {
+      readonly kind: "refusal";
+      readonly nearest: readonly SourceView[];
+      readonly reason: RefusalReason;
+    };
 
 export interface Turn {
   readonly id: string;

@@ -12,6 +12,8 @@ import { openSherpaDb } from "@/storage/db.js";
 import { indexRepo } from "@/storage/indexRepo.js";
 import { chunkStore } from "@/storage/chunks.js";
 import { loadSettings, saveSettings } from "@/settings/settings.js";
+import { buildStarters, type StarterSource } from "./starters.js";
+import { DEFAULT_EMBEDDING_MODEL_ID } from "@/embed/models.js";
 
 export interface IndexOption {
   readonly id: string;
@@ -19,6 +21,12 @@ export interface IndexOption {
   readonly host: string;
   readonly pageCount: number;
   readonly lastIndexedAt: number;
+  /**
+   * True when this index's vectors came from a different embedding model.
+   * Querying it would compare incomparable vectors, so the UI asks for a
+   * rebuild rather than returning confident nonsense.
+   */
+  readonly needsRebuild: boolean;
 }
 
 export interface PanelIndexes {
@@ -26,13 +34,14 @@ export interface PanelIndexes {
   readonly activeId: string | null;
 }
 
-function toOption(meta: IndexMeta): IndexOption {
+function toOption(meta: IndexMeta, selectedModel: string): IndexOption {
   return {
     id: meta.id,
     label: meta.title || meta.host,
     host: meta.host,
     pageCount: meta.pageCount,
     lastIndexedAt: meta.lastIndexedAt,
+    needsRebuild: (meta.embeddingModel ?? "") !== selectedModel,
   };
 }
 
@@ -40,8 +49,9 @@ function toOption(meta: IndexMeta): IndexOption {
 export async function loadIndexes(): Promise<PanelIndexes> {
   const db = await openSherpaDb();
   const metas = await indexRepo.list(db);
-  const options = metas.map(toOption);
   const settings = await loadSettings();
+  const selectedModel = settings.embeddingModel ?? DEFAULT_EMBEDDING_MODEL_ID;
+  const options = metas.map((m) => toOption(m, selectedModel));
 
   const active =
     (settings.activeIndexId && options.some((o) => o.id === settings.activeIndexId)
@@ -69,25 +79,36 @@ export function isStale(lastIndexedAt: number, now = Date.now()): boolean {
 }
 
 /**
- * Starter questions from the index's own top-level headings (PRD 5.9.7) — a
- * real empty state beats three invented questions about a site the user may
- * not have indexed.
+ * Starter questions from the index's own content (PRD 5.9.7).
+ *
+ * One entry per page, weighted by how much text it holds, so substantial
+ * guides win over stubs. Phrasing and filtering live in starters.ts.
  */
 export async function starterQuestions(indexId: string, limit = 3): Promise<string[]> {
   const db = await openSherpaDb();
   const chunks = await chunkStore.listByIndex(db, indexId);
+  if (chunks.length === 0) return [];
 
-  const seen = new Set<string>();
-  const topics: string[] = [];
+  const pages = new Map<string, StarterSource>();
   for (const chunk of chunks) {
-    // Last segment of the heading path is the most specific label.
-    const topic = chunk.headingPath.split(" > ").pop()?.trim();
-    if (!topic || topic.length < 4 || topic.length > 60) continue;
-    const key = topic.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    topics.push(topic);
-    if (topics.length >= limit) break;
+    const existing = pages.get(chunk.url);
+    if (existing) {
+      pages.set(chunk.url, { ...existing, weight: existing.weight + chunk.body.length });
+      continue;
+    }
+    pages.set(chunk.url, {
+      title: chunk.title,
+      headingPath: chunk.headingPath,
+      weight: chunk.body.length,
+    });
   }
-  return topics.map((t) => `How do I ${t.charAt(0).toLowerCase()}${t.slice(1)}?`);
+
+  // A sample is enough to tell whether the corpus covers a generic topic, and
+  // avoids concatenating an entire 15k-chunk index on every panel open.
+  const sample = chunks
+    .slice(0, 400)
+    .map((c) => `${c.title} ${c.headingPath} ${c.body}`)
+    .join(" ");
+
+  return buildStarters([...pages.values()], sample, limit);
 }

@@ -1,0 +1,14 @@
+// Sherpa eval question set. One JSON object per line. `//` lines and blanks are ignored.
+//
+// question    what a user would actually type — their words, not the docs' words
+// answerUrls  article URL(s) that genuinely answer it. EMPTY = the index should refuse.
+// mustInclude phrases a COMPLETE answer must contain (the step that gets dropped)
+// notes       where it came from, why it's tricky
+//
+// Label from real support tickets and help-centre search logs. Invented questions
+// use the docs' own vocabulary and hide exactly the mismatch that breaks retrieval.
+//
+// --- EXAMPLES (replace these) -------------------------------------------------
+{"question":"how to create a two way role play","answerUrls":["https://help.mindtickle.com/support/solutions/articles/3000126215-create-an-interactive-video-roleplay-mission"],"mustInclude":["Practice with avatar","Create mission"],"notes":"User says 'two way'; docs say 'Practice with avatar'. Vocabulary mismatch — the case that produced a refusal at 75% relevance."}
+{"question":"how to create a quick update","answerUrls":["https://help.mindtickle.com/support/solutions/articles/3000097125-course-quick-update-voiceover-slideshow-post-assignment-operations-admin"],"mustInclude":[],"notes":"Straightforward wording match — the easy baseline."}
+{"question":"what is the refund policy for annual contracts","answerUrls":[],"notes":"Not in the help centre. Answering this is a false answer."}

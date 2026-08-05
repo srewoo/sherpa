@@ -53,7 +53,17 @@ describe("db migration", () => {
   it("creates every object store at the current schema version", async () => {
     const db = await freshDb();
     expect([...db.objectStoreNames].sort()).toEqual(
-      ["bm25", "chunks", "frontier", "indexRegistry", "meta", "pages", "queryLog", "vectors"],
+      [
+        "bm25",
+        "chatSessions",
+        "chunks",
+        "frontier",
+        "indexRegistry",
+        "meta",
+        "pages",
+        "queryLog",
+        "vectors",
+      ],
     );
   });
 

@@ -32,11 +32,31 @@ export default defineManifest({
     service_worker: "src/background/service-worker.ts",
     type: "module",
   },
+  /**
+   * A fallback path only. The panel is registered *per tab* by the service
+   * worker (`openPanelForTab`), which disables this global default on install
+   * so the panel opens in the tab the user asked from rather than every tab at
+   * once. Kept so `sidePanel.open` always has a path to fall back on.
+   */
   side_panel: {
     default_path: "src/sidepanel/index.html",
   },
   options_page: "src/options/index.html",
-  permissions: ["storage", "unlimitedStorage", "sidePanel", "offscreen", "tabs", "scripting"],
+  /**
+   * `alarms` + `idle` back the scheduled refresh (5.6.6): the alarm asks "is
+   * anything due?" on a short cycle, and idle state decides whether the machine
+   * is free enough to act on the answer. Neither can read page content.
+   */
+  permissions: [
+    "storage",
+    "unlimitedStorage",
+    "sidePanel",
+    "offscreen",
+    "tabs",
+    "scripting",
+    "alarms",
+    "idle",
+  ],
   optional_host_permissions: ["http://*/*", "https://*/*"],
   /**
    * onnxruntime-web compiles the embedding model to WebAssembly, which MV3's

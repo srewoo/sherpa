@@ -10,7 +10,7 @@ import { mkdir, writeFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODEL = "Xenova/all-MiniLM-L6-v2";
+const MODEL = "Xenova/bge-small-en-v1.5";
 const BASE = `https://huggingface.co/${MODEL}/resolve/main`;
 const FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "onnx/model_quantized.onnx"];
 

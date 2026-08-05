@@ -218,6 +218,74 @@ describe("runCrawl", () => {
     expect(outcome).toEqual({ reason: "failed", status: 500 });
   });
 
+  /**
+   * The regression that stopped a working crawl of help.egain.com. Dead links
+   * on a help centre cluster — a retired section is linked from one page, so
+   * its 404s are harvested together and therefore fetched together. Counting
+   * them toward the abort ceiling turned 222 successfully indexed pages into
+   * "Stopped", with pages still queued and the index left uncalibrated.
+   */
+  it("does not abort on a run of dead links", async () => {
+    const db = await freshDb();
+    const urls = ["a", "b", "c", "d", "e"];
+    await frontier.seed(
+      db,
+      "i",
+      urls.map((u) => ({ url: `https://docs.x.com/${u}`, depth: 0 })),
+    );
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ failureCeiling: 2, concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom(Object.fromEntries(urls.map((u) => [`/${u}`, 404]))),
+      onPage: async () => {},
+    });
+    expect(outcome).toEqual({ reason: "done" });
+    expect((await frontier.counts(db, "i")).failed).toBe(urls.length);
+  });
+
+  /**
+   * The other half: the breaker still has to fire for the thing it exists for.
+   * A 404 between two server errors must not reset the streak either — a site
+   * falling over with one dead link mixed in is still a site falling over.
+   */
+  it("still aborts when the server is failing, even past a dead link", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+      { url: "https://docs.x.com/c", depth: 0 },
+    ]);
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ failureCeiling: 2, concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom({ "/a": 500, "/b": 404, "/c": 500 }),
+      onPage: async () => {},
+    });
+    expect(outcome).toEqual({ reason: "failed", status: 500 });
+  });
+
+  /** A dropped connection is the clearest infrastructure signal there is. */
+  it("aborts on repeated network errors", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ failureCeiling: 2, concurrency: 1 }),
+      ...base,
+      fetcher: fetcherFrom({ "/a": 0, "/b": 0 }),
+      onPage: async () => {},
+    });
+    expect(outcome).toEqual({ reason: "failed", status: 0 });
+  });
+
   it("skips robots-disallowed paths", async () => {
     const db = await freshDb();
     await frontier.seed(db, "i", [{ url: "https://docs.x.com/private/x", depth: 0 }]);
@@ -342,6 +410,281 @@ describe("runCrawl", () => {
     });
     // Only one slot was left under the ceiling.
     expect(seen).toHaveLength(1);
+  });
+
+  it("retries a transient failure once the frontier drains (5.2.5)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: "https://docs.x.com/flaky", depth: 0 }]);
+
+    // Fails with a 500 on the first attempt, succeeds on the retry sweep.
+    let attempt = 0;
+    const seen: string[] = [];
+    let swept = 0;
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: async (url) => {
+        attempt += 1;
+        return attempt === 1
+          ? { url, finalUrl: url, status: 500, html: null, etag: undefined, lastmod: undefined }
+          : { url, finalUrl: url, status: 200, html: "recovered", etag: undefined, lastmod: undefined };
+      },
+      onRetrySweep: (n) => {
+        swept = n;
+      },
+      onPage: async (res) => {
+        seen.push(res.url);
+      },
+    });
+
+    expect(outcome).toEqual({ reason: "done" });
+    expect(swept).toBe(1);
+    expect(seen).toHaveLength(1);
+    const counts = await frontier.counts(db, "i");
+    expect(counts).toMatchObject({ done: 1, failed: 0 });
+  });
+
+  it("does not retry a permanent failure", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: "https://docs.x.com/gone", depth: 0 }]);
+
+    let calls = 0;
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: async (url) => {
+        calls += 1;
+        return { url, finalUrl: url, status: 404, html: null, etag: undefined, lastmod: undefined };
+      },
+      onPage: async () => {},
+    });
+
+    // A 404 will never succeed; one attempt is the right number.
+    expect(calls).toBe(1);
+    const [failure] = await frontier.failures(db, "i");
+    expect(failure?.reason).toBe("missing");
+    expect(failure?.lastStatus).toBe(404);
+  });
+
+  it("gives up after the sweep rather than looping forever", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: "https://docs.x.com/down", depth: 0 }]);
+
+    let calls = 0;
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1, failureCeiling: 99 }),
+      ...base,
+      fetcher: async (url) => {
+        calls += 1;
+        return { url, finalUrl: url, status: 500, html: null, etag: undefined, lastmod: undefined };
+      },
+      onPage: async () => {},
+    });
+
+    expect(outcome).toEqual({ reason: "done" });
+    expect(calls).toBe(2); // original attempt + one sweep
+    expect((await frontier.counts(db, "i")).failed).toBe(1);
+  });
+
+  it("records a reason code for the failure log (5.2.10)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1, failureCeiling: 99 }),
+      ...base,
+      retrySweeps: 0,
+      fetcher: fetcherFrom({ "/a": 404, "/b": 0 }),
+      onPage: async () => {},
+    });
+
+    const reasons = (await frontier.failures(db, "i")).map((f) => f.reason).sort();
+    expect(reasons).toEqual(["missing", "network"]);
+  });
+
+  it("fails only the page when indexing throws, not the whole crawl", async () => {
+    // The regression: onPage rejecting propagated out of the loop, so one
+    // unparseable page or a momentary IndexedDB error killed everything after
+    // it — with no record of which page or why.
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/a", depth: 0 },
+      { url: "https://docs.x.com/poison", depth: 0 },
+      { url: "https://docs.x.com/b", depth: 0 },
+    ]);
+
+    const indexed: string[] = [];
+    const errors: string[] = [];
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1, failureCeiling: 99 }),
+      ...base,
+      retrySweeps: 0,
+      fetcher: fetcherFrom({ "/a": "ok", "/poison": "ok", "/b": "ok" }),
+      onIndexError: (url) => errors.push(new URL(url).pathname),
+      onPage: async (res) => {
+        if (res.url.includes("poison")) throw new Error("embedder exploded");
+        indexed.push(new URL(res.url).pathname);
+      },
+    });
+
+    expect(outcome).toEqual({ reason: "done" });
+    expect(indexed.sort()).toEqual(["/a", "/b"]);
+    expect(errors).toEqual(["/poison"]);
+
+    const [failure] = await frontier.failures(db, "i");
+    expect(failure?.reason).toBe("indexing");
+  });
+
+  it("retries a page that failed to index (5.2.5)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: "https://docs.x.com/flaky", depth: 0 }]);
+
+    let attempts = 0;
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1, failureCeiling: 99 }),
+      ...base,
+      fetcher: fetcherFrom({ "/flaky": "ok" }),
+      onPage: async () => {
+        attempts += 1;
+        // Transient: succeeds on the end-of-crawl sweep.
+        if (attempts === 1) throw new Error("IndexedDB busy");
+      },
+    });
+
+    expect(outcome).toEqual({ reason: "done" });
+    expect(attempts).toBe(2);
+    expect((await frontier.counts(db, "i"))).toMatchObject({ done: 1, failed: 0 });
+  });
+
+  it("revalidates with stored ETags and skips unchanged pages (5.6.5)", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [
+      { url: "https://docs.x.com/same", depth: 0 },
+      { url: "https://docs.x.com/changed", depth: 0 },
+    ]);
+
+    const sent: { url: string; etag: string | undefined }[] = [];
+    const indexed: string[] = [];
+    const unchanged: string[] = [];
+
+    const outcome = await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      validatorsFor: async (url) => ({ etag: `etag-for-${new URL(url).pathname}`, lastmod: undefined }),
+      onUnchanged: (url) => unchanged.push(new URL(url).pathname),
+      fetcher: async (url, validators) => {
+        sent.push({ url: new URL(url).pathname, etag: validators?.etag });
+        const path = new URL(url).pathname;
+        // The server says "not modified" for the page that hasn't changed.
+        if (path === "/same") {
+          return { url, finalUrl: url, status: 304, html: null, etag: validators?.etag, lastmod: undefined };
+        }
+        return { url, finalUrl: url, status: 200, html: "fresh content", etag: "new", lastmod: undefined };
+      },
+      onPage: async (res) => {
+        indexed.push(new URL(res.url).pathname);
+      },
+    });
+
+    expect(outcome).toEqual({ reason: "done" });
+    // Both were revalidated, each carrying its own stored validator. The
+    // frontier yields in key order, so compare as a set.
+    expect(sent.map((c) => c.etag).sort()).toEqual([
+      "etag-for-/changed",
+      "etag-for-/same",
+    ]);
+    // Only the changed page was extracted, chunked and embedded.
+    expect(indexed).toEqual(["/changed"]);
+    expect(unchanged).toEqual(["/same"]);
+    // A 304 is a completed page, not a failure.
+    expect(await frontier.counts(db, "i")).toMatchObject({ done: 2, failed: 0 });
+  });
+
+  it("sends no validators on a first crawl", async () => {
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: ROOT, depth: 0 }]);
+    const seen: (string | undefined)[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg(),
+      ...base,
+      fetcher: async (url, validators) => {
+        seen.push(validators?.etag);
+        return { url, finalUrl: url, status: 200, html: "ok", etag: "e", lastmod: undefined };
+      },
+      onPage: async () => {},
+    });
+    expect(seen).toEqual([undefined]);
+  });
+
+  it("never follows a logout link, even when robots.txt permits it", async () => {
+    // The bug this exists for: a help centre linked /logout from every article
+    // and did not disallow it. Fetching it ended the user's session, and every
+    // page after that redirected to a sign-in screen.
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: ROOT, depth: 0 }]);
+
+    const requested: string[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg({ concurrency: 1 }),
+      ...base,
+      fetcher: async (url) => {
+        requested.push(new URL(url).pathname);
+        const path = new URL(url).pathname;
+        const body =
+          path === "/"
+            ? '<a href="/logout">Sign out</a><a href="/guide">Guide</a><a href="/f/report.pdf">PDF</a>'
+            : "content";
+        return { url, finalUrl: url, status: 200, html: body, etag: undefined, lastmod: undefined };
+      },
+      onPage: async () => {},
+    });
+
+    expect(requested).toContain("/guide");
+    expect(requested).not.toContain("/logout");
+    // Binary attachments are skipped too — they cost a download and index nothing.
+    expect(requested).not.toContain("/f/report.pdf");
+  });
+
+  it("skips an unsafe URL already sitting in the frontier", async () => {
+    // A crawl seeded before this check existed, or a sitemap listing it.
+    const db = await freshDb();
+    await frontier.seed(db, "i", [{ url: "https://docs.x.com/logout", depth: 0 }]);
+
+    const requested: string[] = [];
+    await runCrawl({
+      db,
+      indexId: "i",
+      config: cfg(),
+      ...base,
+      fetcher: async (url) => {
+        requested.push(url);
+        return { url, finalUrl: url, status: 200, html: "x", etag: undefined, lastmod: undefined };
+      },
+      onPage: async () => {},
+    });
+
+    expect(requested).toEqual([]);
+    expect((await frontier.counts(db, "i")).skipped).toBe(1);
   });
 
   it("respects a robots.txt Crawl-delay over the configured rate (5.2.4)", async () => {

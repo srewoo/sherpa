@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { describe, it, expect } from "vitest";
-import { shouldReindex } from "./incremental.js";
+import { shouldReindex, shouldRebuildSparseIndex } from "./incremental.js";
 import { frontier } from "./frontier.js";
 import { openSherpaDb } from "@/storage/db.js";
 import { chunkStore } from "@/storage/chunks.js";
@@ -44,5 +44,22 @@ describe("incremental storage ops", () => {
     await frontier.mark(db, "i", "https://d/b", "failed");
     await frontier.requeueAll(db, "i");
     expect((await frontier.counts(db, "i")).queued).toBe(2);
+  });
+});
+
+describe("shouldRebuildSparseIndex", () => {
+  it("rebuilds after a first crawl or a full re-crawl", () => {
+    expect(shouldRebuildSparseIndex(false, 0)).toBe(true);
+    expect(shouldRebuildSparseIndex(false, 120)).toBe(true);
+  });
+
+  it("rebuilds when an incremental pass changed something", () => {
+    expect(shouldRebuildSparseIndex(true, 1)).toBe(true);
+  });
+
+  it("skips the rebuild when an incremental pass changed nothing", () => {
+    // Every page answered 304 or hashed identical, so the stored blob is
+    // already byte-for-byte correct; rebuilding re-tokenises the whole index.
+    expect(shouldRebuildSparseIndex(true, 0)).toBe(false);
   });
 });

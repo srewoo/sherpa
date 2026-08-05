@@ -5,6 +5,10 @@ import { parseCrawlConfig, type CrawlConfig } from "@/domain/config.js";
 import { DEFAULT_EXCLUDES } from "@/lib/patterns.js";
 import { requestHostPermission } from "@/permissions/host.js";
 import { requestPersistent } from "@/storage/quota.js";
+import { openSherpaDb } from "@/storage/db.js";
+import { metaRepo } from "@/storage/metaRepo.js";
+import { indexRepo } from "@/storage/indexRepo.js";
+import { frontier } from "@/crawl/frontier.js";
 import { formatBytes } from "../models.js";
 
 const PHASE_LABEL: Record<CrawlProgress["phase"], string> = {
@@ -56,7 +60,20 @@ function requestPreview(
   });
 }
 
-export function CrawlSetup(): JSX.Element {
+/** An existing index the user chose to re-crawl, with its stored settings. */
+export interface RecrawlTarget {
+  readonly indexId: string;
+  readonly host: string;
+  readonly config: CrawlConfig;
+}
+
+export function CrawlSetup({
+  recrawl = null,
+  onDone,
+}: {
+  readonly recrawl?: RecrawlTarget | null;
+  readonly onDone?: () => void;
+} = {}): JSX.Element {
   const [root, setRoot] = useState("");
   const [includes, setIncludes] = useState("");
   const [excludes, setExcludes] = useState(DEFAULT_EXCLUDES.join("\n"));
@@ -69,19 +86,39 @@ export function CrawlSetup(): JSX.Element {
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
 
+  // Re-crawling an existing index starts from its stored settings, so they can
+  // be reviewed and edited rather than silently reused (PRD 5.6.4).
+  useEffect(() => {
+    if (!recrawl) return;
+    const { config } = recrawl;
+    setRoot(config.root);
+    setIncludes(config.scope.include.join("\n"));
+    setExcludes(config.scope.exclude.join("\n"));
+    setMaxPages(config.maxPages);
+    setMaxDepth(config.maxDepth);
+    setRps(config.requestsPerSecond);
+    setConcurrency(config.concurrency);
+    setPreview(null);
+  }, [recrawl]);
+
   useEffect(() => {
     if (typeof chrome === "undefined" || !chrome.runtime?.id) return;
-    void chrome.tabs?.query({ active: true, currentWindow: true }).then((tabs) => {
-      const url = tabs[0]?.url;
-      if (url && /^https?:/.test(url)) setRoot(new URL(url).origin + "/");
-    });
+    // Guess the root from the current tab, but only for a brand-new index —
+    // a re-crawl already has one. The progress listener is registered either
+    // way, so a rebuild still reports its progress here.
+    if (!recrawl) {
+      void chrome.tabs?.query({ active: true, currentWindow: true }).then((tabs) => {
+        const url = tabs[0]?.url;
+        if (url && /^https?:/.test(url)) setRoot(new URL(url).origin + "/");
+      });
+    }
     const listener = (msg: unknown): void => {
       const m = msg as { type?: string; progress?: CrawlProgress };
       if (m?.type === "crawl/progress" && m.progress) setProgress(m.progress);
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  }, [recrawl]);
 
   const buildConfig = (): CrawlConfig | null => {
     try {
@@ -140,11 +177,46 @@ export function CrawlSetup(): JSX.Element {
     }
     await requestPersistent();
     await ensureOffscreen();
+
+    if (recrawl) {
+      // Rebuild in place, carrying whatever the user just edited, so the index
+      // id — and the active-index selection pointing at it — survive.
+      await chrome.runtime.sendMessage({
+        type: "crawl/recrawl-full",
+        indexId: recrawl.indexId,
+        config,
+      });
+      onDone?.();
+      return;
+    }
     await chrome.runtime.sendMessage({ type: "crawl/start", config });
   };
 
   const send = (type: "crawl/pause" | "crawl/resume"): void =>
     void chrome.runtime.sendMessage({ type });
+
+  /** Per-URL failure log with reason codes, as CSV (PRD 5.2.10). */
+  const exportFailures = async (): Promise<void> => {
+    const db = await openSherpaDb();
+    const active = await metaRepo.activeCrawl(db);
+    const indexId = active?.indexId ?? (await indexRepo.list(db))[0]?.id;
+    if (!indexId) return;
+
+    const rows = await frontier.failures(db, indexId);
+    const csv = [
+      "url,reason,http_status,attempts",
+      ...rows.map((r) =>
+        [`"${r.url.replace(/"/g, '""')}"`, r.reason ?? "other", r.lastStatus ?? "", r.attempts ?? 1].join(","),
+      ),
+    ].join("\n");
+
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sherpa-crawl-failures.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const running = progress && ["discovering", "crawling", "embedding"].includes(progress.phase);
   const wall = progress?.authWall;
@@ -152,10 +224,11 @@ export function CrawlSetup(): JSX.Element {
 
   return (
     <div className="page">
-      <h1>Set up an index</h1>
+      <h1>{recrawl ? `Re-crawl ${recrawl.host}` : "Set up an index"}</h1>
       <p className="soft" style={{ maxWidth: "64ch" }}>
-        Sherpa crawls this site as you — reaching anything you can see when signed in — and builds a
-        private index that lives only on this device.
+        {recrawl
+          ? "Review the settings below, then rebuild. The existing index is replaced only once the crawl starts, and its conversations and place in the site switcher are kept."
+          : "Sherpa crawls this site as you — reaching anything you can see when signed in — and builds a private index that lives only on this device."}
       </p>
 
       <section className="card">
@@ -288,7 +361,7 @@ export function CrawlSetup(): JSX.Element {
                   onClick={() => void start()}
                   disabled={Boolean(running) || !preview.fits}
                 >
-                  Start crawl
+                  {recrawl ? "Rebuild index" : "Start crawl"}
                 </button>
               )}
             </div>
@@ -330,11 +403,59 @@ export function CrawlSetup(): JSX.Element {
               {preview.hasSitemap
                 ? `Discovered ${preview.discovered.toLocaleString()} URLs from the sitemap.`
                 : "No sitemap found — Sherpa will follow links from the root instead."}{" "}
+              {preview.linkedInScope > 0 &&
+                `${preview.linkedInScope.toLocaleString()} more linked from the root page. `}
               {preview.excluded > 0 &&
                 `${preview.excluded.toLocaleString()} excluded by your patterns. `}
               {preview.blockedByRobots > 0 &&
                 `${preview.blockedByRobots.toLocaleString()} disallowed by robots.txt.`}
             </p>
+            <p className="help">
+              Scope: <span className="mono">{new URL(root).hostname}{preview.scopePrefix}</span> —
+              Sherpa only follows links under this path.
+            </p>
+
+            {preview.requiresAuth && (
+              <div className="notice notice-amber">
+                <span>
+                  <strong>{new URL(root).hostname} is asking you to sign in.</strong> The crawl root
+                  returns a sign-in page rather than content, so Sherpa would index the login screen
+                  and stop. Sign in to the site in this browser, then re-check the scope — Sherpa
+                  crawls using your existing session and never sees your credentials.
+                  <button
+                    className="link-btn"
+                    type="button"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => void chrome.tabs.create({ url: root })}
+                  >
+                    Open {new URL(root).hostname}
+                  </button>
+                </span>
+              </div>
+            )}
+
+            {preview.suggestion && !preview.requiresAuth && (
+              <div className="notice notice-amber">
+                <span>
+                  This root reaches <strong>{preview.linkedInScope.toLocaleString()}</strong> of the{" "}
+                  {preview.linkedOnHost.toLocaleString()} pages linked from it — the rest sit outside{" "}
+                  <span className="mono">{preview.scopePrefix}</span>. Broadening to{" "}
+                  <span className="mono">{new URL(preview.suggestion.root).hostname}</span> reaches{" "}
+                  {preview.suggestion.reachable.toLocaleString()} linked pages.
+                  <button
+                    className="link-btn"
+                    type="button"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => {
+                      setRoot(preview.suggestion!.root);
+                      setPreview(null);
+                    }}
+                  >
+                    Use {preview.suggestion.root}
+                  </button>
+                </span>
+              </div>
+            )}
 
             {!preview.fits && (
               <div className="notice notice-amber">
@@ -408,7 +529,52 @@ export function CrawlSetup(): JSX.Element {
               <span>
                 Chunks <strong>{progress.embedded.toLocaleString()}</strong>
               </span>
+              {progress.unchanged !== undefined && progress.unchanged > 0 && (
+                <span>
+                  Unchanged <strong>{progress.unchanged.toLocaleString()}</strong>
+                </span>
+              )}
             </div>
+            {progress.retrying !== undefined && progress.retrying > 0 && (
+              <p className="help">
+                Retrying {progress.retrying.toLocaleString()} pages that failed transiently.
+              </p>
+            )}
+
+            {/*
+              An aborted crawl used to look identical to a finished one with a
+              few failures: the heading said "Stopped", the counters said 222
+              fetched, and nothing said that 14 pages were still queued and
+              would never be fetched. The index is real and usable, so say both
+              halves — what you have, and what is missing — and offer the one
+              action that finishes the job.
+            */}
+            {progress.phase === "error" && progress.queued > 0 && (
+              <div className="notice notice-amber">
+                <p>
+                  The crawl stopped early: too many pages failed in a row, which usually means the
+                  site started refusing requests. {progress.fetched.toLocaleString()} pages were
+                  indexed and are ready to search; {progress.queued.toLocaleString()} were never
+                  fetched.
+                </p>
+                <p className="help" style={{ marginTop: 4 }}>
+                  Run a refresh to pick up the pages that were missed — it keeps what is already
+                  indexed and only fetches the rest.
+                </p>
+              </div>
+            )}
+
+            {progress.failed > 0 && ["done", "error", "paused"].includes(progress.phase) && (
+              <div className="row gap-2">
+                <span className="help">
+                  {progress.failed.toLocaleString()} pages could not be fetched, after a retry pass.
+                </span>
+                <button className="link-btn" type="button" onClick={() => void exportFailures()}>
+                  Download failure log
+                </button>
+              </div>
+            )}
+
             {progress.currentUrl && (
               <div
                 className="meta mono"

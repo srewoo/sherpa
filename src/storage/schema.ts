@@ -4,10 +4,17 @@
  */
 
 import type { DBSchema } from "idb";
-import type { IndexMeta, StoredChunk, StoredPage } from "@/domain/records.js";
+import type { ChatSession, IndexMeta, StoredChunk, StoredPage } from "@/domain/records.js";
 
 export const DB_NAME = "sherpa";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
+
+/**
+ * How many conversations to keep (PRD 5.9.9). Old sessions are evicted oldest
+ * first, so history stays useful without growing without bound next to the
+ * index it belongs to.
+ */
+export const MAX_CHAT_SESSIONS = 50;
 
 /**
  * The crawl in flight, persisted so it survives the offscreen document being
@@ -20,6 +27,12 @@ export interface ActiveCrawl {
   /** True when the user paused, or an auth wall stopped us. */
   readonly paused: boolean;
   readonly startedAt: number;
+  /**
+   * A scheduled refresh rather than a user-initiated crawl. Persisted so a
+   * crawl resumed after a browser restart is still known to be background work
+   * — otherwise it would come back at full speed and stop yielding.
+   */
+  readonly background?: boolean;
 }
 
 /** Vectors are stored as sharded ArrayBuffer blobs, not one row per vector
@@ -60,6 +73,49 @@ export interface FrontierEntry {
   readonly url: string;
   readonly depth: number;
   readonly status: FrontierStatus;
+  /** HTTP status of the last attempt; 0 for a network-level failure. */
+  readonly lastStatus?: number;
+  /** Reason code for the failure log (PRD 5.2.10). */
+  readonly reason?: FailureReason;
+  /** Fetch attempts so far, so a retry sweep doesn't loop forever. */
+  readonly attempts?: number;
+}
+
+/**
+ * Why a URL failed, in terms a user can act on (PRD 5.2.10). `server` and
+ * `network` are worth retrying at the end of a crawl; `missing` and `forbidden`
+ * are not — the page is genuinely gone or genuinely gated.
+ */
+export type FailureReason =
+  | "network"
+  | "server"
+  | "throttled"
+  | "missing"
+  | "forbidden"
+  /** Fetched fine, but extract/chunk/embed threw — often transient. */
+  | "indexing"
+  | "other";
+
+/** Classify a response status into a reason code. */
+export function failureReason(status: number): FailureReason {
+  if (status === 0) return "network";
+  if (status === 404 || status === 410) return "missing";
+  if (status === 401 || status === 403) return "forbidden";
+  if (status === 408 || status === 429) return "throttled";
+  if (status >= 500) return "server";
+  return "other";
+}
+
+/** Transient failures worth one more attempt once the frontier drains. */
+export function isRetryable(reason: FailureReason | undefined): boolean {
+  return (
+    reason === "network" ||
+    reason === "server" ||
+    reason === "throttled" ||
+    // An embedding or storage hiccup usually passes on a second attempt; a
+    // genuinely unparseable page fails twice and is then left alone.
+    reason === "indexing"
+  );
 }
 
 export interface SherpaDB extends DBSchema {
@@ -87,4 +143,10 @@ export interface SherpaDB extends DBSchema {
   bm25: { key: string; value: Bm25Blob };
   meta: { key: string; value: { key: string; value: unknown } };
   queryLog: { key: number; value: QueryLogEntry; indexes: { byIndex: string } };
+  chatSessions: {
+    key: string;
+    value: ChatSession;
+    /** `byUpdated` orders the history list and drives eviction. */
+    indexes: { byIndex: string; byUpdated: number };
+  };
 }

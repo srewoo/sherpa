@@ -7,7 +7,7 @@
  * index or the retrieval path knowing.
  */
 
-import type { RetrievedChunk } from "@/domain/retrieval.js";
+import type { RetrievedArticle } from "@/domain/retrieval.js";
 
 export type AnswerTier = "extractive" | "nano" | "byok";
 
@@ -23,8 +23,8 @@ export interface TierAvailability {
 
 export interface AnswerRequest {
   readonly query: string;
-  /** Fused, neighbour-expanded context, best first (PRD 5.7). */
-  readonly context: readonly RetrievedChunk[];
+  /** Assembled articles, best first (PRD 5.7). Each is one citable source. */
+  readonly context: readonly RetrievedArticle[];
   /** Prior turns in this session, for follow-up handling (PRD 5.9.3). */
   readonly history?: readonly { role: "user" | "assistant"; text: string }[];
 }
@@ -43,4 +43,17 @@ export interface AnswerGenerator {
   readonly tier: AnswerTier;
   availability(): Promise<TierAvailability>;
   answer(req: AnswerRequest): AsyncIterable<AnswerChunk>;
+  /**
+   * Run a short, non-grounded prompt and return the whole reply.
+   *
+   * This exists for the query-understanding steps — HyDE and query rewriting —
+   * which need a model but not *this* model's answering behaviour. They used to
+   * call Chrome's Nano directly, which meant that with a BYOK key configured
+   * and Nano unavailable (the common case) both features silently did nothing:
+   * two settings the user had switched on, costing nothing and doing nothing.
+   *
+   * Optional, because not every tier has a model behind it. Extractive omits it
+   * and the features correctly stay off rather than pretending.
+   */
+  complete?(prompt: string): Promise<string>;
 }
