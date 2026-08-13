@@ -7,6 +7,7 @@
 import type { PanelEvent } from "@/shared/answer.js";
 import { openSherpaDb } from "@/storage/db.js";
 import { queryLogStore } from "@/gap/queryLog.js";
+import { loadSettings } from "@/settings/settings.js";
 
 export const hasExtension =
   typeof chrome !== "undefined" && Boolean(chrome.runtime?.id);
@@ -59,19 +60,39 @@ export function askQuery(
   pickedFor?: string,
 ): void {
   const requestId = `q-${(counter += 1)}`;
+  let completed = false;
+  const finish = (event: PanelEvent): void => {
+    if (completed) return;
+    onEvent(event);
+    if (event.kind === "done") {
+      completed = true;
+      chrome.runtime.onMessage.removeListener(listener);
+    }
+  };
   const listener = (msg: unknown): void => {
     const m = msg as { type?: string; requestId?: string; event?: PanelEvent };
     if (m?.type !== "query/event" || m.requestId !== requestId || !m.event) return;
-    onEvent(m.event);
-    if (m.event.kind === "done") chrome.runtime.onMessage.removeListener(listener);
+    finish(m.event);
   };
   chrome.runtime.onMessage.addListener(listener);
+
+  // An unavailable offscreen document or a rejected settings read used to
+  // leave the new turn permanently blank. Report the failed request through
+  // the same event path as a provider failure so the panel can settle it.
+  const fail = (error: unknown): void => {
+    const detail = error instanceof Error ? error.message : String(error);
+    finish({ kind: "refusal", nearest: [], reason: "generator-error", detail });
+    finish({ kind: "done" });
+  };
+
   // Make sure the offscreen doc is alive, then ask.
   void chrome.runtime
     .sendMessage({ type: "ensure-offscreen" })
-    .then(() => activeTabUrl())
-    .then((currentUrl) => {
-      void chrome.runtime.sendMessage({
+    // The panel reads settings and sends them, rather than letting the
+    // offscreen document read for itself — see `query/ask.settings`.
+    .then(() => Promise.all([activeTabUrl(), loadSettings()]))
+    .then(([currentUrl, settings]) =>
+      chrome.runtime.sendMessage({
         type: "query/ask",
         requestId,
         indexId,
@@ -80,8 +101,10 @@ export function askQuery(
         recentQuestions,
         focusUrl,
         pickedFor,
-      });
-    });
+        settings,
+      }),
+    )
+    .catch(fail);
 }
 
 /** Record 👍/👎 against the logged query, feeding the gap report (PRD 5.9.8). */

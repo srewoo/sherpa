@@ -57,6 +57,14 @@ export default defineManifest({
     "alarms",
     "idle",
   ],
+  // BYOK requests originate in an extension page. These precise origins are
+  // required for those fetches; optional documentation-site permissions do
+  // not grant access to an AI provider selected later in Settings.
+  host_permissions: [
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*",
+  ],
   optional_host_permissions: ["http://*/*", "https://*/*"],
   /**
    * onnxruntime-web compiles the embedding model to WebAssembly, which MV3's

@@ -100,6 +100,8 @@ function refusalText(reason: RefusalReason, hasNearest: boolean): string {
       }`;
     case "no-index":
       return "No index is selected yet. Crawl a documentation site first, then ask again.";
+    case "generator-error":
+      return "The selected answering model could not produce an answer. Check its key and model in Settings, then try again.";
     case "unknown":
       return `This question wasn't answered.${nearest}`;
   }
@@ -158,6 +160,11 @@ export function TurnView({
           <div className="notice notice-amber" style={{ marginTop: 4 }}>
             <span>{refusalText(answer.reason, answer.nearest.length > 0)}</span>
           </div>
+          {answer.detail && (
+            <div className="notice notice-amber" style={{ marginTop: 4 }}>
+              <span>{answer.detail}</span>
+            </div>
+          )}
           {answer.nearest.length > 0 && (
             <>
               <div className="sources-label">Nearest pages</div>

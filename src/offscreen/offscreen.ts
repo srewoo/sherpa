@@ -159,16 +159,31 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
        * `resolveFollowUp` has only ever seen an empty history — the whole
        * follow-up feature was inert in the shipped extension while its unit
        * tests passed. Destructured now, along with the new `focusUrl`.
-       */
-      const { requestId, indexId, query, currentUrl, recentQuestions, focusUrl, pickedFor } = raw;
+      */
+      const { requestId, indexId, query, currentUrl, recentQuestions, focusUrl, pickedFor, settings } = raw;
+      // `sendMessage` is asynchronous. Preserve source/delta/refusal/done
+      // ordering so a terminal event cannot remove the panel listener before
+      // the answer body reaches it.
+      let delivery = Promise.resolve();
       const emit = (event: PanelEvent): void => {
-        void chrome.runtime.sendMessage({ type: "query/event", requestId, event }).catch(() => {});
+        delivery = delivery
+          .catch(() => {})
+          .then(() => chrome.runtime.sendMessage({ type: "query/event", requestId, event }))
+          .catch(() => {});
       };
       void openSherpaDb()
         .then((db) =>
-          runQuery(db, indexId, query, emit, currentUrl, recentQuestions ?? [], focusUrl, pickedFor),
+          runQuery(db, indexId, query, emit, currentUrl, recentQuestions ?? [], focusUrl, pickedFor, settings),
         )
-        .catch(() => emit({ kind: "done" }));
+        .catch((error: unknown) => {
+          emit({
+            kind: "refusal",
+            nearest: [],
+            reason: "generator-error",
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          emit({ kind: "done" });
+        });
       break;
     }
     default:

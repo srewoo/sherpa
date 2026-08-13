@@ -96,6 +96,7 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
         kind: "refusal",
         nearest: event.nearest as SourceView[],
         reason: event.reason,
+        ...(event.detail ? { detail: event.detail } : {}),
       },
     };
   }
@@ -114,6 +115,7 @@ export function App(): JSX.Element {
   const sessionRef = useRef<LiveSession | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const turnCounter = useRef(0);
 
   const active = indexes.find((i) => i.id === activeId) ?? null;
 
@@ -133,6 +135,48 @@ export function App(): JSX.Element {
       setIndexes(options);
       setActiveId(id);
     });
+  }, []);
+
+  /**
+   * Keep the index header honest after a crawl.
+   *
+   * The list was read once at mount and never again, so a crawl finishing while
+   * the panel was open left it describing a snapshot from before: "This index
+   * is empty — nothing has been crawled into it yet" sitting above answers
+   * drawn from that very index, with sources and relevance scores. The banner
+   * was not wrong about what it had read; it had simply never re-read.
+   *
+   * Two triggers, because a crawl can finish either way round. `crawl/progress`
+   * covers a panel that stayed open, and `visibilitychange` covers one that was
+   * hidden or closed while the crawl ran.
+   *
+   * Only the options are refreshed — never `activeId`. Re-setting that would
+   * restart the session and drop the conversation on screen for what is only a
+   * metadata update.
+   */
+  useEffect(() => {
+    if (!hasExtension) return;
+    const refresh = (): void => {
+      void loadIndexes().then(({ options }) => setIndexes(options));
+    };
+
+    const onMessage = (msg: unknown): void => {
+      const m = msg as { type?: string; progress?: { phase?: string } };
+      if (m?.type !== "crawl/progress") return;
+      // Only terminal phases: refreshing on every fetched page would re-read
+      // the whole registry hundreds of times during a crawl.
+      if (m.progress?.phase === "done" || m.progress?.phase === "error") refresh();
+    };
+    const onVisible = (): void => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    chrome.runtime.onMessage.addListener(onMessage);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      chrome.runtime.onMessage.removeListener(onMessage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // Starter questions come from the active index's own headings (PRD 5.9.7);
@@ -230,7 +274,9 @@ export function App(): JSX.Element {
   const submit = (question: string = draft, focusUrl?: string, pickedFor?: string): void => {
     const asked = question.trim();
     if (asked === "") return;
-    const id = `t-${turns.length}-${asked.length}`;
+    // A length-derived ID collides when two sends land before React commits
+    // the first state update, causing a later response to update both turns.
+    const id = `t-${turnCounter.current++}`;
     setDraft("");
 
     if (!hasExtension || !activeId) {

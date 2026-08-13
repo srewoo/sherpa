@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ByokProvider } from "@/domain/generator.js";
+import type { AnswerSettings } from "@/generator/select.js";
 import { loadSettings, saveSettings } from "@/settings/settings.js";
+import { hasProviderPermission, requestProviderPermission } from "@/permissions/host.js";
 import { DEFAULT_FLOORS } from "@/retrieval/confidence.js";
 import { storageEstimate, requestPersistent, type StorageEstimate } from "@/storage/quota.js";
 import { deleteEverything } from "@/storage/wipe.js";
@@ -29,9 +31,27 @@ export function Settings(): JSX.Element {
   /** Models this key can actually use; empty until a key lists successfully. */
   const [fetchedModels, setFetchedModels] = useState<readonly string[]>([]);
   const [modelListError, setModelListError] = useState("");
+  /**
+   * Whether Sherpa may call this provider's API at all.
+   *
+   * Separate from the key, and invisible until it bites: without a host
+   * permission for the API origin, an extension fetch is a plain cross-origin
+   * request and CORS kills it before the provider ever sees the key. The symptom
+   * was an answer that never arrived. `null` means "not checked yet".
+   */
+  const [providerAllowed, setProviderAllowed] = useState<boolean | null>(null);
+  /**
+   * Answer settings are one stored object. Keep the next full object outside
+   * React's asynchronous state so a quick mode/provider/key sequence cannot
+   * save a stale snapshot over the user's final model selection.
+   */
+  const answerRef = useRef<AnswerSettings>({ mode: "auto" });
+  const answerWrite = useRef<Promise<void>>(Promise.resolve());
+  const answerRevision = useRef(0);
 
   useEffect(() => {
     void loadSettings().then((s) => {
+      answerRef.current = s.answer;
       setMode(s.answer.mode);
       if (s.answer.provider) setProvider(s.answer.provider);
       if (s.answer.model) setModel(s.answer.model);
@@ -76,6 +96,22 @@ export function Settings(): JSX.Element {
     };
   }, [mode, provider, apiKey]);
 
+  useEffect(() => {
+    if (mode !== "byok") {
+      setProviderAllowed(null);
+      return;
+    }
+    void hasProviderPermission(provider).then(setProviderAllowed);
+  }, [mode, provider]);
+
+  /**
+   * Chrome only shows a permission prompt from a user gesture, so this cannot
+   * ride along with the debounced save — it needs its own button.
+   */
+  const grantProvider = (): void => {
+    void requestProviderPermission(provider).then(setProviderAllowed);
+  };
+
   const persist = (patch: Record<string, unknown>): void => void saveSettings(patch);
 
   /**
@@ -93,13 +129,31 @@ export function Settings(): JSX.Element {
   const saveAnswer = (
     next: Partial<{ mode: "auto" | "byok"; provider: ByokProvider; model: string; apiKey: string }>,
   ): void => {
-    const merged = { mode, provider, model, apiKey, ...next };
-    void saveSettings({ answer: merged })
-      .then(() => loadSettings())
-      .then((stored) => {
+    const merged: AnswerSettings = { ...answerRef.current, ...next };
+    answerRef.current = merged;
+    const revision = ++answerRevision.current;
+
+    // Update the controls from the canonical object immediately. A queued
+    // write below preserves this order in chrome.storage.local as well.
+    setMode(merged.mode);
+    if (merged.provider) setProvider(merged.provider);
+    if (merged.model) setModel(merged.model);
+    if (merged.apiKey !== undefined) setApiKey(merged.apiKey);
+
+    answerWrite.current = answerWrite.current
+      .catch(() => {})
+      .then(() => saveSettings({ answer: merged }))
+      .then(async () => {
+        // Read back only the newest write. Reading each overlapping write was
+        // itself a stale state update that could switch the form back to Nano.
+        if (revision !== answerRevision.current) return;
+        const stored = await loadSettings();
+        if (revision !== answerRevision.current) return;
+        answerRef.current = stored.answer;
         setMode(stored.answer.mode);
         if (stored.answer.provider) setProvider(stored.answer.provider);
         if (stored.answer.model) setModel(stored.answer.model);
+        if (stored.answer.apiKey !== undefined) setApiKey(stored.answer.apiKey);
       });
   };
 
@@ -183,6 +237,15 @@ export function Settings(): JSX.Element {
                   style={{ borderRadius: 0 }}
                   onChange={(e) => { setApiKey(e.target.value); saveAnswer({ apiKey: e.target.value }); }} />
               </span>
+              {mode === "byok" && providerAllowed === false && (
+                <span className="notice notice-amber" style={{ display: "block", marginTop: 8 }}>
+                  Sherpa needs permission to call {provider}&apos;s API. Without it the request is
+                  blocked by the browser before your key is ever used.{" "}
+                  <button className="link-btn" type="button" onClick={grantProvider}>
+                    Grant access
+                  </button>
+                </span>
+              )}
               {mode === "byok" && byokIssue({ mode, provider, model, apiKey }) ? (
                 <span className="notice notice-amber" style={{ display: "block", marginTop: 8 }}>
                   {byokIssue({ mode, provider, model, apiKey })} Answers will come from the

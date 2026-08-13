@@ -44,3 +44,53 @@ export async function hasHostPermission(root: string): Promise<boolean> {
 export async function requestHostPermission(root: string): Promise<boolean> {
   return chrome.permissions.request({ origins: originPatterns(root) });
 }
+
+/**
+ * The API origin each BYOK provider is called on.
+ *
+ * BYOK needs a host permission for the same reason a crawl does, and for the
+ * reason spelled out above: an extension fetch to an origin it has no
+ * permission for is a plain cross-origin request, and it dies on CORS. OpenAI
+ * sends no permissive CORS headers to browser origins, so without the grant the
+ * request fails at the network layer with nothing but "Failed to fetch" — which
+ * reads as a broken key, or as nothing at all.
+ *
+ * Anthropic's `anthropic-dangerous-direct-browser-access` header in `byok.ts`
+ * addresses the *provider's* half of this for that one provider. The grant is
+ * the browser's half, and every provider needs it.
+ */
+export const PROVIDER_ORIGINS: Readonly<Record<string, string>> = {
+  openai: "https://api.openai.com/*",
+  anthropic: "https://api.anthropic.com/*",
+  gemini: "https://generativelanguage.googleapis.com/*",
+};
+
+export function providerOrigin(provider: string): string | undefined {
+  return PROVIDER_ORIGINS[provider];
+}
+
+export async function hasProviderPermission(provider: string): Promise<boolean> {
+  const origin = providerOrigin(provider);
+  if (!origin) return false;
+  try {
+    return await chrome.permissions.contains({ origins: [origin] });
+  } catch {
+    // No permissions API in this context — don't claim a grant we can't see.
+    return false;
+  }
+}
+
+/**
+ * Prompt for access to the provider's API. Must be called from a user gesture,
+ * which is why it lives behind an explicit button in Settings rather than being
+ * fired from the debounced save.
+ */
+export async function requestProviderPermission(provider: string): Promise<boolean> {
+  const origin = providerOrigin(provider);
+  if (!origin) return false;
+  try {
+    return await chrome.permissions.request({ origins: [origin] });
+  } catch {
+    return false;
+  }
+}

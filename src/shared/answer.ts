@@ -43,6 +43,8 @@ export type PanelEvent =
       readonly kind: "refusal";
       readonly nearest: readonly WireSource[];
       readonly reason: RefusalReason;
+      /** The provider's own error message, when there is one. */
+      readonly detail?: string;
     }
   | { readonly kind: "done" };
 

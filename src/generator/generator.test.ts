@@ -233,3 +233,63 @@ describe("generator.complete (query understanding)", () => {
     }
   });
 });
+
+describe("BYOK failures are never silent", () => {
+  const cfg = { provider: "openai" as const, model: "gpt-5.4-mini", apiKey: "sk-test" };
+  const original = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = original;
+  });
+
+  function respondWith(status: number, body: string): void {
+    globalThis.fetch = (async () =>
+      new Response(body, { status, headers: { "content-type": "application/json" } })) as typeof fetch;
+  }
+
+  async function collect(gen: ByokGenerator): Promise<string> {
+    let out = "";
+    for await (const chunk of gen.answer({ query: "q", context: [] })) out += chunk.delta;
+    return out;
+  }
+
+  /**
+   * The exact failure a user hit: a model name that doesn't exist. The provider
+   * returns a JSON error, `sseData` finds no SSE frames in it, the loop yields
+   * nothing, and the turn used to end empty with no error anywhere — which reads
+   * as "the answer didn't render".
+   */
+  it("surfaces the provider's message for a rejected model", async () => {
+    respondWith(
+      400,
+      JSON.stringify({ error: { message: "The model `gpt-5.4-mini` does not exist" } }),
+    );
+    await expect(collect(new ByokGenerator(cfg))).rejects.toThrow(/does not exist/);
+  });
+
+  it("names the provider and model in the error", async () => {
+    respondWith(401, JSON.stringify({ error: { message: "Incorrect API key provided" } }));
+    await expect(collect(new ByokGenerator(cfg))).rejects.toThrow(/openai \(gpt-5\.4-mini\)/);
+  });
+
+  it("still reports usefully when the error body is not JSON", async () => {
+    respondWith(502, "<html>Bad Gateway</html>");
+    await expect(collect(new ByokGenerator(cfg))).rejects.toThrow(/502/);
+  });
+
+  /** A 200 carrying no usable frames is a failure too, and silence is the one
+   * way it must not be reported. */
+  it("rejects a 200 that streams no answer text", async () => {
+    globalThis.fetch = (async () =>
+      new Response("data: {}\n\ndata: [DONE]\n\n", { status: 200 })) as typeof fetch;
+    await expect(collect(new ByokGenerator(cfg))).rejects.toThrow(/no answer text/);
+  });
+
+  it("passes a real streamed answer through unchanged", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: [DONE]\n\n',
+        { status: 200 },
+      )) as typeof fetch;
+    expect(await collect(new ByokGenerator(cfg))).toBe("Hello");
+  });
+});

@@ -53,6 +53,7 @@ export type AnswerState =
       readonly kind: "refusal";
       readonly nearest: readonly SourceView[];
       readonly reason: RefusalReason;
+      readonly detail?: string;
     };
 
 export interface Turn {

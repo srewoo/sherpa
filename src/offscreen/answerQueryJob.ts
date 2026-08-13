@@ -18,7 +18,7 @@ import { deriveFacet } from "@/retrieval/facet.js";
 import { loadPriors, invalidatePriors } from "@/retrieval/prior.js";
 import { resultCache, cacheKey } from "@/retrieval/cache.js";
 import { createReranker, type Reranker } from "@/retrieval/rerank.js";
-import { loadSettings } from "@/settings/settings.js";
+import { loadSettings, type Settings } from "@/settings/settings.js";
 import { queryLogStore } from "@/gap/queryLog.js";
 import { indexRepo } from "@/storage/indexRepo.js";
 import { floorsForIndex, rerankForIndex } from "@/retrieval/calibrate.js";
@@ -51,8 +51,18 @@ export async function runQuery(
   focusUrl?: string,
   /** The question that pick answered, for the learned prior (prior.ts). */
   pickedFor?: string,
+  /**
+   * Settings as the panel read them.
+   *
+   * Preferred over reading them here. This document is the only context that
+   * read settings for itself, and when its read disagreed with the panel's the
+   * failure was invisible: defaults look identical to a user who chose the
+   * defaults, so BYOK silently became "answered on-device" with no error and no
+   * notice. Falls back to a local read for callers that send nothing.
+   */
+  provided?: Settings,
 ): Promise<void> {
-  const settings = await loadSettings();
+  const settings = provided ?? (await loadSettings());
   const embedder = await getEmbedder();
   const { generator, notice } = await selectGenerator(settings.answer);
 
@@ -236,6 +246,10 @@ export async function runQuery(
         kind: "refusal",
         nearest: event.nearest.map(articleToSource),
         reason: event.reason,
+        // Forwarded, not dropped. Without this the panel showed the generic
+        // "could not produce an answer" and threw away the provider's own
+        // message — the only part that says what to change.
+        ...(event.detail ? { detail: event.detail } : {}),
       });
     } else {
       emit(event); // delta | done

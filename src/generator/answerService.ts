@@ -42,6 +42,13 @@ export type RefusalReason =
   | "model-declined"
   /** There is no index to search yet — not a judgement about anything. */
   | "no-index"
+  /**
+   * The answering model itself failed — a rejected key, a model name that
+   * doesn't exist, a provider outage. Distinct from every other reason here
+   * because nothing is wrong with the question *or* the index, and the fix is
+   * in Settings rather than in the docs.
+   */
+  | "generator-error"
   /** Restored from a conversation saved before the reason was recorded. */
   | "unknown";
 
@@ -73,6 +80,8 @@ export type AnswerEvent =
       readonly nearest: readonly RetrievedArticle[];
       readonly topScore: number;
       readonly reason: RefusalReason;
+      /** The provider's own message, when there is one worth showing. */
+      readonly detail?: string;
     }
   | { readonly kind: "done" };
 
@@ -214,10 +223,31 @@ export async function* answerQuery(
     certainty: verdict.certainty,
   };
 
+  /**
+   * A generator that throws must say so.
+   *
+   * Previously this propagated out of `answerQuery`, past the offscreen
+   * handler's catch, and became a bare `done` — the panel cleared its pending
+   * state and left an empty answer with no error, no refusal and nothing to
+   * act on. An unreachable provider is a perfectly ordinary thing to happen and
+   * the only unacceptable way to report it is silently.
+   */
   let answer = "";
-  for await (const chunk of deps.generator.answer({ query, context })) {
-    answer += chunk.delta;
-    yield { kind: "delta", delta: chunk.delta };
+  try {
+    for await (const chunk of deps.generator.answer({ query, context })) {
+      answer += chunk.delta;
+      yield { kind: "delta", delta: chunk.delta };
+    }
+  } catch (error) {
+    yield {
+      kind: "refusal",
+      nearest: context.slice(0, 3),
+      topScore: res.topScore,
+      reason: "generator-error",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+    yield { kind: "done" };
+    return;
   }
 
   // The grounding prompt tells the model to reply with REFUSAL_TEXT when the

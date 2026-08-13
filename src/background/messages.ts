@@ -7,6 +7,7 @@ import type { CrawlConfig } from "@/domain/config.js";
 import type { CrawlPreview } from "@/crawl/preview.js";
 import type { PanelEvent } from "@/shared/answer.js";
 import type { ImportProgress } from "@/offscreen/importCorpusJob.js";
+import type { Settings } from "@/settings/settings.js";
 
 export interface CrawlProgress {
   readonly fetched: number;
@@ -103,6 +104,28 @@ export type Message =
       readonly focusUrl?: string;
       /** The question that pick answered, for the learned prior. */
       readonly pickedFor?: string;
+      /**
+       * The user's settings, read by the panel and sent with the query.
+       *
+       * The offscreen document is the only context that read settings for
+       * itself, and it is the least ordinary one — a hidden document with a
+       * restricted API surface. When its read disagreed with the panel's, the
+       * result was a silent, confident, wrong claim: "Answered with Gemini
+       * Nano · on-device" beside an Options page showing OpenAI selected with a
+       * working key. Nothing errored, because a settings read that quietly
+       * returns defaults looks exactly like a user who chose the defaults.
+       *
+       * The panel reads storage all day for the switcher, starters and index
+       * info, so it is the reliable reader. Sending what it read removes the
+       * disagreement rather than trying to detect it. The offscreen doc still
+       * falls back to its own read when this is absent (a crawl-triggered
+       * query, an older panel build).
+       *
+       * The BYOK key rides along. That is extension-internal messaging, not
+       * egress — the key is already in chrome.storage.local and goes nowhere
+       * else but the provider the user chose.
+       */
+      readonly settings?: Settings;
     }
   | { readonly type: "query/event"; readonly requestId: string; readonly event: PanelEvent };
 

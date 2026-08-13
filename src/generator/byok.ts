@@ -118,12 +118,82 @@ export class ByokGenerator implements AnswerGenerator {
     });
   }
 
+  /**
+   * Turn a failed response into a message worth reading.
+   *
+   * `res.ok` went unchecked, and the shape of the failure hid it perfectly: a
+   * 400 or 401 returns a JSON error body, `sseData` finds no SSE frames in it,
+   * the loop yields nothing, and the turn ends with an empty answer and no
+   * error anywhere. A wrong model name or an expired key looked exactly like
+   * "the answer didn't render".
+   *
+   * The provider's own message is the useful part — "model `gpt-5.4-mini` does
+   * not exist" tells the user precisely what to change, and inventing our own
+   * wording for it would only lose that.
+   */
+  private async failure(res: Response): Promise<Error> {
+    let detail = "";
+    try {
+      const body = await res.text();
+      const json = JSON.parse(body) as { error?: { message?: string } | string };
+      detail =
+        typeof json.error === "string" ? json.error : (json.error?.message ?? body.slice(0, 200));
+    } catch {
+      detail = "";
+    }
+    const where = `${this.cfg.provider} (${this.cfg.model})`;
+    return new Error(
+      detail
+        ? `${where} returned ${res.status}: ${detail}`
+        : `${where} returned ${res.status} ${res.statusText}.`,
+    );
+  }
+
+  /**
+   * `fetch` that explains a network-level failure.
+   *
+   * A cross-origin fetch from an extension page is only exempt from CORS if the
+   * extension holds a host permission for that origin, and Sherpa requests host
+   * permissions per *crawl site* — never for the provider's API. Without the
+   * grant the request dies before it reaches OpenAI, and all the platform gives
+   * us is `TypeError: Failed to fetch`, which is indistinguishable from being
+   * offline and says nothing about the actual fix.
+   *
+   * See `permissions/host.ts`, which documents this same trap for crawl hosts.
+   */
+  private async send(req: Request): Promise<Response> {
+    try {
+      return await fetch(req);
+    } catch (error) {
+      const origin = new URL(req.url).origin;
+      throw new Error(
+        `Could not reach ${origin}. Sherpa may not have permission to call it — ` +
+          `open Settings and use "Grant access" beside your provider. ` +
+          `(${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+
   async *answer(req: AnswerRequest): AsyncIterable<AnswerChunk> {
     const context = req.context;
-    const res = await fetch(request(this.cfg, buildGroundedPrompt(req.query, context)));
+    const res = await this.send(request(this.cfg, buildGroundedPrompt(req.query, context)));
+    if (!res.ok) throw await this.failure(res);
+
+    let produced = false;
     for await (const data of sseData(res)) {
       const delta = extractDelta(this.cfg.provider, data);
-      if (delta) yield { delta };
+      if (delta) {
+        produced = true;
+        yield { delta };
+      }
+    }
+    // A 200 that streamed nothing usable is still a failure, and silence is
+    // the one way it must not be reported.
+    if (!produced) {
+      throw new Error(
+        `${this.cfg.provider} (${this.cfg.model}) returned no answer text. ` +
+          "The model name may be wrong, or the response format unexpected.",
+      );
     }
   }
 
@@ -136,7 +206,8 @@ export class ByokGenerator implements AnswerGenerator {
    * irrelevant and the saving in duplicated provider quirks is not.
    */
   async complete(prompt: string): Promise<string> {
-    const res = await fetch(request(this.cfg, prompt));
+    const res = await this.send(request(this.cfg, prompt));
+    if (!res.ok) throw await this.failure(res);
     let out = "";
     for await (const data of sseData(res)) {
       out += extractDelta(this.cfg.provider, data) ?? "";
