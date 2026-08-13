@@ -59,33 +59,35 @@ export interface Settings {
 /**
  * Refusal floor (PRD 5.8.8) as a cosine similarity.
  *
- * ⚠️ **This value is known to be mis-calibrated and is kept only until the real
- * eval settles it.** It was swept against `src/eval/fixtures` — a hashed
- * bag-of-words embedder — and a cosine distribution is a property of the
- * *model*, not of the retrieval code. The fixture's distribution has nothing to
- * do with the model users actually run.
+ * Measured, finally. `npm run eval:sites` embeds three real crawled help
+ * centres with the actual bge-small weights and reads the answerable and
+ * unanswerable score distributions apart:
  *
- * Measured against the real bge-small weights (`npm run eval`):
+ *   site                  answerable median   negatives p95   oracle floor
+ *   help.egain.com                    0.864           0.687          0.70
+ *   help.gong.io                      0.764           0.716          0.75
+ *   help.mindtickle.com               0.778           0.724          0.75
  *
- *   cosine(query, a passage that answers it)      ≈ 0.89
- *   cosine(query, an unrelated passage)           ≈ 0.35
- *   cosine(query, a *plausible* question the
- *          docs happen not to cover)              ≈ 0.55–0.70
+ * The previous value, 0.40, was swept against the fixture embedder — a hashed
+ * bag-of-words stand-in — and was below every negative every real corpus
+ * produced. Its measured false-answer rate was 92%, 100% and 92%: the floor
+ * could not refuse anything, and the model's grounding prompt was doing all of
+ * the refusing on its own. That is why users saw "I found related pages but
+ * couldn't answer from them" instead of a clean refusal.
  *
- * That third row is the problem. bge scores everything in the product's own
- * subject area highly, so at 0.40 the floor accepts every plausible question
- * including the ones the index cannot answer — on the fixture question set its
- * false-answer rate is 100%, and the sweep puts the knee near 0.65. In practice
- * the model's own refusal has been carrying that load alone, which is why users
- * see "I found related pages but couldn't answer from them" rather than a clean
- * below-floor refusal.
+ * 0.70 clears the negatives on all three corpora. It is only the fallback for
+ * an index with no calibration of its own (`calibrate.ts`), which is the better
+ * answer wherever it exists — cosine distributions shift with corpus size and
+ * subject matter, so one global number is a compromise between three answers.
  *
- * The default is deliberately *not* changed here yet: the measurement above
- * comes from twelve chunks and ten adversarial questions, which settles the
- * direction but not the number. Export a real corpus, run `npm run eval`, and
- * take the floor its sweep recommends.
+ * Two honest caveats the sweep also reports. Gong and Mindtickle show genuine
+ * *overlap*: answerable p05 sits below negatives p95, so no threshold separates
+ * them perfectly and raising the floor to their 0.75 oracle would refuse ~48%
+ * and ~38% of answerable questions. And the "answerable" set is known-item
+ * (a page asked by its own title), which is an upper bound on retrieval rather
+ * than a model of how people really ask.
  */
-export const DEFAULT_REFUSAL_FLOOR = 0.4;
+export const DEFAULT_REFUSAL_FLOOR = 0.7;
 
 const DEFAULTS: Settings = {
   answer: { mode: "auto" },
@@ -98,6 +100,55 @@ const DEFAULTS: Settings = {
   rerank: false,
   rewriteQueries: false,
 };
+
+/**
+ * Read the answering config, checking its shape rather than asserting it.
+ *
+ * This was `s["answer"] as AnswerSettings`, and the cast is what made a whole
+ * class of failure invisible. A stored object missing `mode` — a partial write,
+ * a record from an older shape, anything — yields `mode: undefined`, which is
+ * not `"byok"`, so `byokIssue` reports *no issue*, Nano is selected, and no
+ * notice is raised. The panel then states "on-device" beside an Options page
+ * showing OpenAI, and neither is lying about what it read.
+ *
+ * A cast cannot fail. That is precisely why it is the wrong tool for data that
+ * crossed a storage boundary.
+ */
+function readAnswer(stored: Record<string, unknown>): AnswerSettings {
+  const raw = stored["answer"];
+  if (raw === undefined || raw === null) return DEFAULTS.answer;
+  if (typeof raw !== "object") {
+    console.warn("sherpa: stored answer settings are not an object; using defaults", raw);
+    return DEFAULTS.answer;
+  }
+
+  const a = raw as Record<string, unknown>;
+  const mode = a["mode"];
+  if (mode !== "auto" && mode !== "byok") {
+    // Recoverable: a key and provider are present, the mode simply isn't. Infer
+    // it rather than silently answering on-device with a key sitting right
+    // there — and say so, because inferring a privacy-relevant setting is not
+    // something to do quietly.
+    const inferable =
+      typeof a["provider"] === "string" && typeof a["apiKey"] === "string" && a["apiKey"] !== "";
+    console.warn(
+      `sherpa: stored answer settings have no valid mode (${String(mode)}); ` +
+        (inferable ? "inferring byok from the saved key." : "falling back to auto."),
+    );
+    if (!inferable) return DEFAULTS.answer;
+  }
+
+  return {
+    // Reached only with a valid mode, or an invalid one we just inferred as
+    // byok — so anything that isn't explicitly "auto" is byok here.
+    mode: mode === "auto" ? "auto" : "byok",
+    ...(typeof a["provider"] === "string"
+      ? { provider: a["provider"] as NonNullable<AnswerSettings["provider"]> }
+      : {}),
+    ...(typeof a["model"] === "string" ? { model: a["model"] } : {}),
+    ...(typeof a["apiKey"] === "string" ? { apiKey: a["apiKey"] } : {}),
+  };
+}
 
 function readFloors(stored: Record<string, unknown>): ConfidenceFloors {
   const saved = stored["floors"] as Partial<ConfidenceFloors> | undefined;
@@ -114,7 +165,23 @@ function readFloors(stored: Record<string, unknown>): ConfidenceFloors {
 const hasStorage = (): boolean => typeof chrome !== "undefined" && Boolean(chrome.storage?.local);
 
 export async function loadSettings(): Promise<Settings> {
-  if (!hasStorage()) return DEFAULTS;
+  /**
+   * Falling back to defaults here is right — outside the extension (tests, the
+   * dev-server panel) there is no storage to read. Doing it *silently* is not.
+   *
+   * Every field this returns is a user decision, and the most consequential one
+   * says whether queries leave the device. A context that cannot read storage
+   * gets `mode: "auto"` and answers on-device while the Options page shows BYOK
+   * selected — a disagreement with no error, no notice, and nothing in either
+   * console to distinguish it from the user simply not having saved.
+   */
+  if (!hasStorage()) {
+    console.warn(
+      "sherpa: chrome.storage unavailable in this context — using DEFAULT settings, " +
+        "so any BYOK key, floors or model choice the user saved is being ignored here.",
+    );
+    return DEFAULTS;
+  }
   const s = await chrome.storage.local.get([
     "answer",
     "floor",
@@ -128,7 +195,7 @@ export async function loadSettings(): Promise<Settings> {
     "rewriteQueries",
   ]);
   return {
-    answer: (s["answer"] as AnswerSettings) ?? DEFAULTS.answer,
+    answer: readAnswer(s),
     // Migrates the old single `floor`: it becomes the refuse band, and the
     // confident band sits above it, so an existing install keeps its behaviour
     // for refusals and gains the hedge.

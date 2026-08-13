@@ -208,19 +208,28 @@ export function calibrateFloors(input: CalibrationInput, now: number): Calibrati
    */
   let refuse = trimmedMax(negatives) + NEGATIVE_MARGIN;
 
+  refuse = Math.max(DEFAULT_FLOORS.refuse, Math.min(refuse, MAX_SANE_FLOOR));
+
   /**
-   * The guard against calibrating an index into silence. If the corpus's own
-   * articles score no better than its noise, a floor above them refuses
-   * everything; better to sit just under the content and let the model's
-   * grounding prompt do the refusing.
+   * The guard against calibrating an index into silence, applied last.
+   *
+   * If the corpus's own articles score no better than its noise, a floor above
+   * them refuses everything; better to sit just under the content and let the
+   * model's grounding prompt do the refusing.
+   *
+   * Ordering is load-bearing, and it changed when the shipped default rose from
+   * 0.40 to a measured 0.70. Clamping to the content *before* taking
+   * `max(DEFAULT_FLOORS.refuse, …)` let the global minimum overrule the guard,
+   * so an index whose content genuinely scores 0.60–0.68 — a small or unusual
+   * corpus — would be pinned at 0.70 and refuse every question ever asked of
+   * it. The global default is a floor for the *absence* of evidence; measured
+   * evidence about this corpus outranks it.
    */
   const positives = (input.positiveScores ?? []).filter((s) => Number.isFinite(s) && s > 0);
   if (positives.length >= 5) {
     const positiveFloor = quantile(positives, 0.1);
-    if (refuse > positiveFloor) refuse = Math.min(refuse, positiveFloor);
+    if (refuse > positiveFloor) refuse = positiveFloor;
   }
-
-  refuse = Math.max(DEFAULT_FLOORS.refuse, Math.min(refuse, MAX_SANE_FLOOR));
   const confident = Math.min(refuse + CONFIDENT_SPAN, MAX_SANE_FLOOR + CONFIDENT_SPAN);
 
   return {

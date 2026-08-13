@@ -19,7 +19,16 @@ import { invalidateSession } from "@/retrieval/session.js";
 import type { StoredChunk } from "@/domain/records.js";
 import { CORPUS, GOLDEN, ADVERSARIAL, embeddedText } from "./fixtures/corpus.js";
 import { fixtureEmbedder, FIXTURE_DIM } from "./fixtures/embedder.js";
-import { runRetrievalEval, runAdversarialEval, passesGate } from "./harness.js";
+import {
+  runRetrievalEval,
+  runAdversarialEval,
+  runRefinementEval,
+  passesGate,
+  type TurnOutcome,
+} from "./harness.js";
+import { chooseRefinements } from "@/retrieval/refine.js";
+import { answerQuery } from "@/generator/answerService.js";
+import type { AnswerGenerator } from "@/domain/generator.js";
 import { DEFAULT_REFUSAL_FLOOR } from "@/settings/settings.js";
 
 const INDEX = "eval";
@@ -115,6 +124,114 @@ describe("retrieval eval (M1, M2)", () => {
   });
 });
 
+/**
+ * Drive the *real* orchestration — the same `answerQuery` the offscreen job
+ * runs — and report where the turn ended up. Retrieval scores alone cannot see
+ * this: the failure being gated against was a turn that retrieved perfectly
+ * well and then produced nothing.
+ *
+ * The generator is a stub. What is under test is control flow, not prose.
+ */
+const STUB_GENERATOR: AnswerGenerator = {
+  tier: "extractive",
+  pack: { maxArticles: 8, tokenBudget: 100000 },
+  availability: async () => ({ tier: "extractive" as const, state: "available" as const }),
+  async *answer() {
+    yield { delta: "answer text" };
+  },
+};
+
+async function outcomeOf(
+  query: string,
+): Promise<{ outcome: TurnOutcome; refinements: number }> {
+  const deps = {
+    retrieve: (q: string) => retrieve({ db, indexId: INDEX, embedder: fixtureEmbedder }, q),
+    generator: STUB_GENERATOR,
+    floors: { refuse: FLOOR, confident: 0.65 },
+  };
+
+  let outcome: TurnOutcome = "blocked";
+  let refinements = 0;
+  for await (const event of answerQuery(deps, query)) {
+    // A refusal is a real outcome and outranks the sources that preceded it —
+    // "model-declined" arrives after them and is what the user actually sees.
+    if (event.kind === "refusal") outcome = "refusal";
+    else if (event.kind === "sources" && outcome === "blocked") outcome = "answer";
+    else if (event.kind === "refine") refinements = event.options.length;
+  }
+  return { outcome, refinements };
+}
+
+describe("refinement eval (M4)", () => {
+  /**
+   * The regression, as a gate.
+   *
+   * Not "did it answer?" — a refusal is a legitimate, visible outcome, and with
+   * the fixture embedder's hashed cosines plenty of golden questions land under
+   * the floor for reasons that say nothing about the pipeline. The failure is a
+   * turn that produced *neither*: the old flow yielded a question back and then
+   * `done`, leaving the user with no answer, no refusal, and nowhere to go.
+   */
+  it("never leaves a question without an answer or a refusal", async () => {
+    const report = await runRefinementEval(GOLDEN, outcomeOf);
+    expect(report.n).toBe(GOLDEN.length);
+    expect(report.blockedRate).toBe(0);
+  });
+
+  /** Same guarantee for questions the corpus genuinely cannot answer. */
+  it("declines unanswerable questions rather than stalling on them", async () => {
+    const adversarial = ADVERSARIAL.map((query) => ({ query, relevant: [] }));
+    const report = await runRefinementEval(adversarial, outcomeOf);
+    expect(report.blockedRate).toBe(0);
+  });
+
+  /**
+   * Refinement is advisory now, so a high rate is clutter rather than a dead
+   * end — but on a well-formed golden set it still signals a miscalibrated
+   * scatter threshold. Held loosely on purpose: the fixture embedder's score
+   * *distribution* is a hashing stand-in, not bge's, so only `floorSweep`
+   * against a real corpus can calibrate the constant itself.
+   */
+  it("keeps unsolicited refinement rare on well-formed questions", async () => {
+    const report = await runRefinementEval(GOLDEN, outcomeOf);
+    expect(report.refineRate).toBeLessThanOrEqual(0.2);
+  });
+
+  /**
+   * The loop, as an assertion.
+   *
+   * Picking a chip used to re-ask the chosen *title* as a fresh query, which
+   * retrieves that page plus its near-identical siblings at near-identical
+   * scores — the most reliably "ambiguous" input the corpus can produce — so
+   * the same chips came back unchanged, forever. Scoping to the URL makes a
+   * pick terminal: one page survives, and one page cannot scatter.
+   */
+  it("resolves a picked option to that page and offers nothing further", async () => {
+    const first = await retrieve({ db, indexId: INDEX, embedder: fixtureEmbedder }, "roleplay");
+    const target = first.articles[0];
+    expect(target).toBeDefined();
+
+    const picked = await retrieve(
+      { db, indexId: INDEX, embedder: fixtureEmbedder, focusUrl: target!.url },
+      target!.title,
+    );
+
+    expect(picked.articles.length).toBeGreaterThan(0);
+    expect(picked.articles.every((a) => a.url === target!.url)).toBe(true);
+    // The terminal property: no further question can be generated from one page.
+    expect(chooseRefinements(picked.articles)).toEqual([]);
+  });
+
+  /** A stale URL should cost the scoping, never the answer. */
+  it("falls back to unscoped results when the focused page is gone", async () => {
+    const result = await retrieve(
+      { db, indexId: INDEX, embedder: fixtureEmbedder, focusUrl: "https://gone.example/404" },
+      "roleplay",
+    );
+    expect(result.articles.length).toBeGreaterThan(0);
+  });
+});
+
 describe("adversarial eval (M3)", () => {
   it("keeps the false-answer rate at or below the gate", async () => {
     const report = await runAdversarialEval(ADVERSARIAL, didAnswer);
@@ -127,6 +244,91 @@ describe("release gate", () => {
   it("passes with the current pipeline", async () => {
     const retrieval = await runRetrievalEval(GOLDEN, retrieveIds);
     const adversarial = await runAdversarialEval(ADVERSARIAL, didAnswer);
-    expect(passesGate(retrieval, adversarial)).toBe(true);
+    const refinement = await runRefinementEval(GOLDEN, outcomeOf);
+    expect(passesGate(retrieval, adversarial, refinement)).toBe(true);
+  });
+});
+
+/**
+ * The pick path, end to end.
+ *
+ * Everything here guards a way the *fix* could reintroduce the dead end it was
+ * written to remove — a chip Sherpa itself offered that leads nowhere useful.
+ */
+describe("refinement picks", () => {
+  async function firstArticle(query: string) {
+    const r = await retrieve({ db, indexId: INDEX, embedder: fixtureEmbedder }, query);
+    const a = r.articles[0];
+    expect(a).toBeDefined();
+    return a!;
+  }
+
+  /**
+   * Scoping reads the page out of the index, not out of the fused candidate
+   * list. Filtering the candidates looks equivalent and isn't: a page whose
+   * chunks miss the top-k would silently fall back to unscoped results, and the
+   * user would be answered from a different document than the one they picked.
+   */
+  it("returns the picked page even when the pick's wording does not retrieve it", async () => {
+    const target = await firstArticle("roleplay");
+    const scoped = await retrieve(
+      { db, indexId: INDEX, embedder: fixtureEmbedder, focusUrl: target.url },
+      // Wording with nothing to do with the page — the URL must still win.
+      "zzzz unrelated gibberish",
+    );
+    expect(scoped.articles.length).toBeGreaterThan(0);
+    expect(scoped.articles.every((a) => a.url === target.url)).toBe(true);
+  });
+
+  /** Chunks the retrievers never surfaced still get a measured cosine. */
+  it("measures similarity for chunks pulled in by scoping", async () => {
+    const target = await firstArticle("roleplay");
+    const scoped = await retrieve(
+      { db, indexId: INDEX, embedder: fixtureEmbedder, focusUrl: target.url },
+      "zzzz unrelated gibberish",
+    );
+    expect(scoped.topScore).toBeGreaterThan(0);
+  });
+
+  /**
+   * The subtlest way to rebuild the dead end: offer a chip, then refuse it.
+   *
+   * A picked page is scored against the question, and nothing guarantees that
+   * page clears the index's floor — facet options in particular are grounded
+   * over the top articles rather than only the tightly-clustered ones. Refusing
+   * there would have Sherpa declining its own suggestion, and M4 could not see
+   * it, because a refusal is a legitimate outcome everywhere else.
+   */
+  it("answers a picked page rather than refusing it, however it scores", async () => {
+    const target = await firstArticle("roleplay");
+    const deps = {
+      retrieve: () =>
+        retrieve(
+          { db, indexId: INDEX, embedder: fixtureEmbedder, focusUrl: target.url },
+          "zzzz unrelated gibberish",
+        ),
+      generator: STUB_GENERATOR,
+      // A floor nothing could clear, standing in for a badly-scoring pick.
+      floors: { refuse: 0.99, confident: 0.995 },
+      focused: true,
+    };
+
+    const kinds: string[] = [];
+    for await (const event of answerQuery(deps, "how do I record a call?")) kinds.push(event.kind);
+    expect(kinds).toContain("sources");
+    expect(kinds).not.toContain("refusal");
+  });
+
+  /** The override is the floor only — an empty result set still refuses. */
+  it("still refuses when there is genuinely nothing to answer from", async () => {
+    const deps = {
+      retrieve: async () => ({ articles: [], topScore: 0, denseAvailable: true }),
+      generator: STUB_GENERATOR,
+      floors: { refuse: 0.4, confident: 0.65 },
+      focused: true,
+    };
+    const kinds: string[] = [];
+    for await (const event of answerQuery(deps, "q")) kinds.push(event.kind);
+    expect(kinds).toContain("refusal");
   });
 });

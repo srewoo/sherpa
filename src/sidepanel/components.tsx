@@ -1,5 +1,6 @@
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { SourceView, Turn } from "./types.js";
+import type { RefineOption } from "@/retrieval/refine.js";
 import type { RefusalReason } from "@/generator/answerService.js";
 import { tierLabel } from "./types.js";
 import { htmlToText } from "./markdown.js";
@@ -124,8 +125,8 @@ export function TurnView({
 }: {
   turn: Turn;
   indexId: string | null;
-  /** Called when a disambiguation chip is chosen; re-asks with that wording. */
-  onPick?: (label: string) => void;
+  /** Called when a refinement chip is chosen; re-asks scoped to that page. */
+  onPick?: (option: RefineOption) => void;
 }): JSX.Element {
   const { answer } = turn;
   const [copied, setCopied] = useState(false);
@@ -152,30 +153,7 @@ export function TurnView({
         <div className="q-bubble">{turn.question}</div>
       </div>
 
-      {answer.kind === "disambiguation" ? (
-        /*
-         * Several genuinely different readings of the question. Asking costs a
-         * turn; guessing the top hit costs a wrong answer that looks right, and
-         * refusing hides content that is plainly there. The user is holding the
-         * missing information — the chips just ask for it.
-         */
-        <div className="answer">
-          <div className="answer-body">Which of these did you mean?</div>
-          <ul className="option-chips">
-            {answer.options.map((option) => (
-              <li key={option.url}>
-                <button
-                  className="chip"
-                  type="button"
-                  onClick={() => onPick?.(option.label)}
-                >
-                  {option.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : answer.kind === "refusal" ? (
+      {answer.kind === "refusal" ? (
         <div className="answer">
           <div className="notice notice-amber" style={{ marginTop: 4 }}>
             <span>{refusalText(answer.reason, answer.nearest.length > 0)}</span>
@@ -230,6 +208,36 @@ export function TurnView({
             </div>
           ) : (
             <div className="answer-body" dangerouslySetInnerHTML={{ __html: answer.html }} />
+          )}
+
+          {/*
+            Other readings of the question — offered, never demanded.
+
+            This sits *below* a finished answer for a reason. Its predecessor
+            appeared instead of one, and a user who didn't recognise any chip
+            had nowhere to go but to re-ask; picking one re-searched the chosen
+            title and produced the same three chips again. Underneath an answer
+            the same information costs nothing to ignore.
+
+            The facet question is used when a model could name what the options
+            differ by ("Which platform?"); otherwise the chips are page titles
+            under a neutral prompt, which is weaker but never wrong.
+          */}
+          {!answer.pending && answer.refine && answer.refine.options.length > 0 && (
+            <div className="refine">
+              <div className="refine-prompt soft">
+                {answer.refine.facet?.question ?? "Not what you meant?"}
+              </div>
+              <ul className="option-chips">
+                {(answer.refine.facet?.options ?? answer.refine.options).map((option) => (
+                  <li key={option.url}>
+                    <button className="chip" type="button" onClick={() => onPick?.(option)}>
+                      {option.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {/*

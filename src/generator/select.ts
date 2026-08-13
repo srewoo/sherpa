@@ -40,10 +40,35 @@ export interface GeneratorChoice {
   readonly notice?: string;
 }
 
+/**
+ * One line per query saying which tier won and on what evidence.
+ *
+ * Added because "Settings says OpenAI, the panel says Gemini Nano" was not
+ * diagnosable from either end. The Options page read-back proves what *it*
+ * stored; nothing proved what the offscreen document — a different context,
+ * where the decision is actually made — read back. When the two disagree the
+ * user sees a confident, silent, wrong claim about where their query went, and
+ * an on-device claim is a privacy claim, so silence here is not acceptable.
+ *
+ * The key is never logged: only whether one is present and how long it is,
+ * which is enough to tell "no key saved" from "wrong key".
+ */
+function logTierDecision(settings: AnswerSettings, tier: string, issue: string | null): void {
+  console.info("sherpa: answering tier", {
+    tier,
+    configuredMode: settings.mode,
+    provider: settings.provider ?? "(none)",
+    model: settings.model ?? "(none)",
+    apiKey: settings.apiKey?.trim() ? `present (${settings.apiKey.trim().length} chars)` : "absent",
+    issue: issue ?? "none",
+  });
+}
+
 export async function selectGenerator(settings: AnswerSettings): Promise<GeneratorChoice> {
   const issue = byokIssue(settings);
 
   if (settings.mode === "byok" && !issue) {
+    logTierDecision(settings, "byok", issue);
     return {
       generator: new ByokGenerator({
         provider: settings.provider!,
@@ -57,10 +82,12 @@ export async function selectGenerator(settings: AnswerSettings): Promise<Generat
 
   const nano = new NanoGenerator();
   if ((await nano.availability()).state === "available") {
+    logTierDecision(settings, "nano", issue);
     return fallback ? { generator: nano, notice: fallback } : { generator: nano };
   }
 
   const extractive = new ExtractiveGenerator();
+  logTierDecision(settings, "extractive", issue);
   const notice = issue
     ? `${issue} The on-device model is unavailable too, so this is a passage extract.`
     : undefined;

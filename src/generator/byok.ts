@@ -7,7 +7,7 @@
 
 import type { AnswerChunk, AnswerGenerator, AnswerRequest, ByokProvider, TierAvailability } from "@/domain/generator.js";
 import { buildGroundedPrompt } from "./prompt.js";
-import { packContext, BYOK_PACK } from "./context.js";
+import { BYOK_PACK } from "./context.js";
 
 export interface ByokConfig {
   readonly provider: ByokProvider;
@@ -107,6 +107,7 @@ function extractDelta(provider: ByokProvider, data: string): string {
 
 export class ByokGenerator implements AnswerGenerator {
   readonly tier = "byok" as const;
+  readonly pack = BYOK_PACK;
   constructor(private readonly cfg: ByokConfig) {}
 
   availability(): Promise<TierAvailability> {
@@ -118,7 +119,7 @@ export class ByokGenerator implements AnswerGenerator {
   }
 
   async *answer(req: AnswerRequest): AsyncIterable<AnswerChunk> {
-    const context = packContext(req.context, BYOK_PACK);
+    const context = req.context;
     const res = await fetch(request(this.cfg, buildGroundedPrompt(req.query, context)));
     for await (const data of sseData(res)) {
       const delta = extractDelta(this.cfg.provider, data);

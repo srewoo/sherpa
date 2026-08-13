@@ -563,6 +563,14 @@ kbd {
 
 /* Disambiguation chips — shown instead of guessing which reading was meant. */
 .option-chips { list-style: none; margin: var(--s-3) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+
+/*
+ * Refinement offered under a finished answer. Set apart by a rule rather than a
+ * panel: it is an aside to the answer, not a competing block, and the answer
+ * must stay the thing the eye lands on.
+ */
+.refine { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px solid var(--border); }
+.refine-prompt { font-family: var(--font-ui); font-size: 12.5px; }
 .chip {
   font-family: var(--font-ui); font-size: 12.5px; line-height: 1.3;
   padding: 8px 12px; border-radius: var(--r-pill);

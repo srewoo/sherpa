@@ -47,12 +47,12 @@ function toStored(turn: Turn, at: number): StoredTurn | null {
       at,
     };
   }
-  // A disambiguation is a question back to the user, not an answer — there is
-  // nothing to replay, and saving it would restore chips whose options came
-  // from a search that is no longer running.
-  if (answer.kind === "disambiguation") return null;
   // Still streaming — wait for it to settle.
   if (answer.pending) return null;
+  // Refinement chips are deliberately not persisted: their URLs came from a
+  // search that is no longer running, and a restored chip that re-queries a
+  // stale index is worse than no chip. The answer they accompanied is saved
+  // in full, which is the part with lasting value.
   return {
     question: turn.question,
     markdown: answer.markdown,

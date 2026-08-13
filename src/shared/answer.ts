@@ -8,7 +8,8 @@ import type { AnswerTier } from "@/domain/generator.js";
 import type { RetrievedArticle } from "@/domain/retrieval.js";
 import type { RefusalReason } from "@/generator/answerService.js";
 import type { Certainty } from "@/retrieval/confidence.js";
-import type { DisambiguationOption } from "@/retrieval/disambiguate.js";
+import type { RefineOption } from "@/retrieval/refine.js";
+import type { Facet } from "@/retrieval/facet.js";
 
 export type { RefusalReason };
 
@@ -33,8 +34,9 @@ export type PanelEvent =
       readonly certainty: Certainty;
     }
   | {
-      readonly kind: "disambiguation";
-      readonly options: readonly DisambiguationOption[];
+      readonly kind: "refine";
+      readonly options: readonly RefineOption[];
+      readonly facet?: Facet;
     }
   | { readonly kind: "delta"; readonly delta: string }
   | {

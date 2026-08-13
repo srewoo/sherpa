@@ -6,6 +6,7 @@ import { BrandMark, TurnView } from "./components.js";
 import { renderMarkdown } from "./markdown.js";
 import {
   askQuery,
+  warmIndex,
   hasExtension,
   requestRefresh,
   requestFullRecrawl,
@@ -78,8 +79,15 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
       },
     };
   }
-  if (event.kind === "disambiguation") {
-    return { ...turn, answer: { kind: "disambiguation", options: event.options } };
+  // Arrives after the answer has streamed, so it only ever decorates one.
+  if (event.kind === "refine" && turn.answer.kind === "answer") {
+    return {
+      ...turn,
+      answer: {
+        ...turn.answer,
+        refine: { options: event.options, ...(event.facet ? { facet: event.facet } : {}) },
+      },
+    };
   }
   if (event.kind === "refusal") {
     return {
@@ -134,6 +142,14 @@ export function App(): JSX.Element {
     void starterQuestions(activeId).then(setStarters);
     void refreshHistory(activeId);
     if (sessionRef.current?.indexId !== activeId) startSession(activeId);
+    /**
+     * Start loading the embedder and the index while the user is still reading
+     * the page. Neither depends on the question, and both are slow enough to
+     * dominate the first answer's latency — the weights are 33 MB and a cold
+     * session is 350–1000 ms at 15k chunks. Also runs on a site switch, which
+     * is exactly when the next index is cold.
+     */
+    warmIndex(activeId);
   }, [activeId, refreshHistory, startSession]);
 
   // The keyboard shortcut opens the panel and focuses the question box (5.9.2).
@@ -203,7 +219,15 @@ export function App(): JSX.Element {
     await refreshHistory(activeId);
   };
 
-  const submit = (question: string = draft): void => {
+  /**
+   * Ask a question.
+   *
+   * `focusUrl` is set when the question came from a refinement chip: the user
+   * has named an exact page, and searching for its *title* instead would throw
+   * that away and re-run the very query most likely to scatter again. The label
+   * is still what appears in the conversation — only the retrieval is scoped.
+   */
+  const submit = (question: string = draft, focusUrl?: string, pickedFor?: string): void => {
     const asked = question.trim();
     if (asked === "") return;
     const id = `t-${turns.length}-${asked.length}`;
@@ -256,7 +280,7 @@ export function App(): JSX.Element {
         return next;
       });
       if (event.kind !== "done") scrollToEnd();
-    });
+    }, recentQuestions, focusUrl, pickedFor);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -415,9 +439,13 @@ export function App(): JSX.Element {
               key={t.id}
               turn={t}
               indexId={activeId}
-              // A picked option is asked as a fresh question, so the chosen
-              // wording becomes part of the conversation the user can see.
-              onPick={(label) => submit(label)}
+              // Three things, and each matters. The label becomes the visible
+              // question so the conversation reads naturally; the URL scopes
+              // the search to the page the user chose, which is what stops the
+              // old ask-again loop; and the *original* question is what the
+              // pick gets learned against, since binding a page title to its
+              // own page teaches nothing (prior.ts).
+              onPick={(option) => submit(option.label, option.url, t.question)}
             />
           ))
         )}

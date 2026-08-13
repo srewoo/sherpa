@@ -71,6 +71,16 @@ export type Message =
   /** Offscreen → worker: render a JS-heavy page in a tab (PRD 5.2.11). */
   | { readonly type: "render/page"; readonly url: string }
   | { readonly type: "panel/open" }
+  /**
+   * Load the embedder and the index session before anything is asked.
+   *
+   * Both are lazy and both are slow — the ONNX weights are 33 MB and a cold
+   * session load measures 350–1000 ms at 15k chunks — so the first question of
+   * every panel session paid for them while the user watched. Nothing about
+   * that work depends on the question, so it can happen the moment the panel
+   * knows which index is active.
+   */
+  | { readonly type: "query/warm"; readonly indexId: string }
   | {
       readonly type: "query/ask";
       readonly requestId: string;
@@ -85,6 +95,14 @@ export type Message =
        * cannot see it.
        */
       readonly recentQuestions?: readonly string[];
+      /**
+       * Restrict retrieval to one page. Set when the question came from a
+       * refinement chip, where the user named an exact document rather than
+       * describing one.
+       */
+      readonly focusUrl?: string;
+      /** The question that pick answered, for the learned prior. */
+      readonly pickedFor?: string;
     }
   | { readonly type: "query/event"; readonly requestId: string; readonly event: PanelEvent };
 

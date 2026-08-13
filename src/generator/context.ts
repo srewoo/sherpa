@@ -23,18 +23,29 @@ export const NANO_TOKEN_BUDGET = 3000;
 /** PRD 5.8.5: a handful of sources, not the whole result set. */
 export const NANO_MAX_ARTICLES = 4;
 
-export interface PackOptions {
-  readonly maxArticles: number;
-  readonly tokenBudget: number;
-}
+export type { PackOptions } from "@/domain/generator.js";
+import type { PackOptions } from "@/domain/generator.js";
 
 export const NANO_PACK: PackOptions = {
   maxArticles: NANO_MAX_ARTICLES,
   tokenBudget: NANO_TOKEN_BUDGET,
 };
 
-/** BYOK providers have room for the full result set. */
+/**
+ * BYOK providers have room for the full result set.
+ *
+ * `maxArticles: 8` was unreachable for the life of the setting: assembly caps
+ * at `DEFAULT_ASSEMBLE.maxArticles`, which was 5, so a 12k-token budget was
+ * being handed five articles. The assembly cap now matches this.
+ */
 export const BYOK_PACK: PackOptions = { maxArticles: 8, tokenBudget: 12_000 };
+
+/**
+ * Extractive quotes passages rather than prompting a model, so it has no
+ * context window to respect — the only limit is how many source cards are
+ * useful to read.
+ */
+export const EXTRACTIVE_PACK: PackOptions = { maxArticles: 4, tokenBudget: Number.MAX_SAFE_INTEGER };
 
 /**
  * Select the articles to send, preserving rank order. The best article is

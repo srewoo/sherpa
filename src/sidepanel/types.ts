@@ -3,7 +3,22 @@
 import type { AnswerTier } from "@/domain/generator.js";
 import type { RefusalReason } from "@/generator/answerService.js";
 import type { Certainty } from "@/retrieval/confidence.js";
-import type { DisambiguationOption } from "@/retrieval/disambiguate.js";
+import type { RefineOption } from "@/retrieval/refine.js";
+import type { Facet } from "@/retrieval/facet.js";
+
+/**
+ * Alternatives offered beneath a finished answer.
+ *
+ * Deliberately a field on an answer rather than an answer kind of its own. That
+ * shape is the fix: refinement can only ever accompany an answer, so there is
+ * no state in which the panel shows chips and nothing else — which is exactly
+ * the state users used to get stuck in.
+ */
+export interface RefineView {
+  readonly options: readonly RefineOption[];
+  /** Set when a model could name what the options differ by. */
+  readonly facet?: Facet;
+}
 
 export interface SourceView {
   /** 1-based citation number, matching the `[n]` markers in the answer. */
@@ -31,10 +46,8 @@ export type AnswerState =
       readonly notice?: string;
       /** "uncertain" when the match was middling; the panel shows a caveat. */
       readonly certainty?: Certainty;
-    }
-  | {
-      readonly kind: "disambiguation";
-      readonly options: readonly DisambiguationOption[];
+      /** Other readings of the question, shown under the answer. */
+      readonly refine?: RefineView;
     }
   | {
       readonly kind: "refusal";

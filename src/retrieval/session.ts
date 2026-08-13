@@ -14,6 +14,8 @@ import { vectorStore, type LoadedVectors } from "@/storage/vectors.js";
 import { chunkStore } from "@/storage/chunks.js";
 import { bm25Store } from "@/storage/bm25Store.js";
 import { FieldedBm25Index } from "./fieldedBm25.js";
+import { resultCache } from "./cache.js";
+import { invalidatePriors } from "./prior.js";
 
 export interface IndexSession {
   readonly indexId: string;
@@ -73,8 +75,22 @@ export function loadSession(db: SherpaDatabase, indexId: string): Promise<IndexS
   return entry;
 }
 
-/** Drop the cached session — call after a crawl or recrawl mutates the index. */
+/**
+ * Drop everything derived from the index — call after a crawl or recrawl
+ * mutates it.
+ *
+ * The result cache and the pick priors are invalidated here rather than at each
+ * call site on purpose. There are three of those today and there will be more,
+ * and a cache that survives the data it was derived from serves confidently
+ * wrong results — the failure mode with no error message. One function that
+ * cannot be half-called is worth the coupling.
+ *
+ * (`cache.js` imports `RetrieveResult` as a type only, so this introduces no
+ * runtime cycle back through `retrieve.js`.)
+ */
 export function invalidateSession(indexId?: string): void {
   if (indexId === undefined) cache.clear();
   else cache.delete(indexId);
+  resultCache.clear(indexId);
+  invalidatePriors(indexId);
 }

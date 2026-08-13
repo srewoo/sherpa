@@ -5,15 +5,18 @@
  */
 
 import type { SherpaDatabase } from "@/storage/db.js";
+import type { RetrievedArticle } from "@/domain/retrieval.js";
 import type { PanelEvent } from "@/shared/answer.js";
 import { articleToSource } from "@/shared/answer.js";
 import { getEmbedder } from "@/embed/embedder.js";
 import { retrieve } from "@/retrieval/retrieve.js";
 import { answerQuery } from "@/generator/answerService.js";
 import { selectGenerator } from "@/generator/select.js";
-import { hydePrompt } from "@/retrieval/hyde.js";
+import { understand } from "@/retrieval/understand.js";
 import { resolveFollowUp } from "@/retrieval/followUp.js";
-import { rewriteQuery } from "@/retrieval/rewrite.js";
+import { deriveFacet } from "@/retrieval/facet.js";
+import { loadPriors, invalidatePriors } from "@/retrieval/prior.js";
+import { resultCache, cacheKey } from "@/retrieval/cache.js";
 import { createReranker, type Reranker } from "@/retrieval/rerank.js";
 import { loadSettings } from "@/settings/settings.js";
 import { queryLogStore } from "@/gap/queryLog.js";
@@ -44,6 +47,10 @@ export async function runQuery(
   emit: (event: PanelEvent) => void,
   currentUrl?: string,
   recentQuestions: readonly string[] = [],
+  /** Set when the question came from a refinement chip naming an exact page. */
+  focusUrl?: string,
+  /** The question that pick answered, for the learned prior (prior.ts). */
+  pickedFor?: string,
 ): Promise<void> {
   const settings = await loadSettings();
   const embedder = await getEmbedder();
@@ -61,16 +68,11 @@ export async function runQuery(
    */
   const complete = generator.complete?.bind(generator);
 
-  /**
-   * HyDE writes a hypothetical answer to embed in place of the question. Only
-   * wired up when the user opted in *and* a model can run it — it costs a call
-   * on the critical path, and `hydeQuery` already falls back to the plain
-   * question if it fails.
-   */
-  const hypothesize =
-    settings.hyde && complete ? (q: string) => complete(hydePrompt(q)) : undefined;
-
-  const meta = await indexRepo.get(db, indexId);
+  const [meta, priors] = await Promise.all([
+    indexRepo.get(db, indexId),
+    // Cheap and cached; a failed read yields no priors rather than no search.
+    loadPriors(db, indexId),
+  ]);
 
   /**
    * Loaded once per offscreen document, and only if this index asked for it.
@@ -82,35 +84,115 @@ export async function runQuery(
     : undefined;
 
   /**
-   * Query understanding, cheapest first.
+   * Query understanding: follow-up resolution, rewriting and HyDE, resolved in
+   * one place and at most one model call (see understand.ts).
    *
-   * 1. Resolve a follow-up against the previous turn. Pure text, no model, and
-   *    it fixes the class of question users ask second.
-   * 2. Optionally let the model rewrite it — checked, never trusted, and it
-   *    falls back to the text from step 1 on any failure.
+   * A chip pick skips it entirely. The user named a page; there is nothing left
+   * to disambiguate, and letting a model rewrite a title it is about to be
+   * scoped to anyway is pure risk on the critical path.
+   */
+  /**
+   * What the model is actually asked.
+   *
+   * On a pick, `query` is the chip's *label* — with a facet chip that is a bare
+   * axis value like "Zoom". Generating against it would prompt the model to
+   * answer the single word "Zoom", and the transcript would show that as the
+   * question. The user's real question is the one the chip was offered under,
+   * so it is what gets answered; the label stays on screen as the visible turn,
+   * which is how the conversation reads naturally.
+   */
+  const asked = pickedFor ?? query;
+
+  /** One search, cached. Split out so it can be started speculatively. */
+  const runRetrieve = async (search: string, denseText?: string) => {
+    const key = cacheKey({
+      indexId,
+      search,
+      ...(denseText ? { denseText } : {}),
+      ...(currentUrl ? { currentUrl } : {}),
+      ...(focusUrl ? { focusUrl } : {}),
+      reranked: rerank !== undefined,
+    });
+    const cached = resultCache.get(key);
+    if (cached) return cached;
+
+    const result = await retrieve(
+      {
+        db,
+        indexId,
+        embedder,
+        ...(currentUrl ? { currentUrl } : {}),
+        ...(denseText ? { denseText } : {}),
+        ...(rerank ? { rerank } : {}),
+        ...(focusUrl ? { focusUrl } : {}),
+        // Skipped on a pick: the result is already scoped to one page, and a
+        // learned nudge cannot reorder a list of one.
+        ...(!focusUrl && priors.length > 0 ? { priors } : {}),
+      },
+      search,
+    );
+    resultCache.set(key, result);
+    return result;
+  };
+
+  /**
+   * Speculative retrieval.
+   *
+   * Query understanding needs a model, and with BYOK that is a network round
+   * trip sitting in front of every search — retrieval itself is ~25 ms, so the
+   * model call dominates time-to-first-token while the index sits idle. But
+   * most rewrites change nothing: `rejectionReason` discards anything risky and
+   * a well-formed question is returned unchanged, so the plan usually *is* the
+   * resolved text.
+   *
+   * So search on the resolved text immediately, in parallel. If the plan lands
+   * on the same string with no HyDE passage, that result is already correct and
+   * the model call cost nothing. Otherwise it is discarded and the real search
+   * runs — no worse than before, because that search could not have started any
+   * earlier anyway.
+   *
+   * Only when a model call will actually happen; otherwise `understand` returns
+   * without awaiting anything and there is nothing to overlap.
    */
   const resolved = resolveFollowUp(query, recentQuestions);
-  const searchText =
-    settings.rewriteQueries && complete
-      ? await rewriteQuery(resolved, recentQuestions, complete)
-      : resolved;
+  const willCallModel = !focusUrl && complete !== undefined && (settings.rewriteQueries || settings.hyde);
+  const speculative = willCallModel ? runRetrieve(resolved) : undefined;
+  // A rejected speculation must not surface as an unhandled rejection; the
+  // awaited path re-runs and reports the real error.
+  speculative?.catch(() => {});
+
+  const plan = focusUrl
+    ? { search: asked, source: "raw" as const }
+    : await understand(query, recentQuestions, {
+        ...(complete ? { complete } : {}),
+        rewriteQueries: settings.rewriteQueries,
+        hyde: settings.hyde,
+      });
+
+  const retrieval =
+    speculative && plan.search === resolved && !plan.denseText
+      ? speculative
+      : runRetrieve(plan.search, plan.denseText);
 
   const deps = {
-    // Retrieval searches the resolved text; the user's own words are what the
+    // Retrieval searches the planned text; the user's own words are what the
     // model answers and what the UI shows.
-    retrieve: (_q: string) =>
-      retrieve(
-        {
-          db,
-          indexId,
-          embedder,
-          ...(currentUrl ? { currentUrl } : {}),
-          ...(hypothesize ? { hypothesize } : {}),
-          ...(rerank ? { rerank } : {}),
-        },
-        searchText,
-      ),
+    retrieve: (_q: string) => retrieval,
     generator,
+    // Suspends the refusal floor for a page the user explicitly chose — see
+    // AnswerServiceDeps.focused.
+    ...(focusUrl ? { focused: true } : {}),
+    /**
+     * Names the axis the alternatives differ along. Only when a model exists —
+     * the Extractive tier falls back to plain title chips, which is weaker but
+     * never blocks and never invents.
+     */
+    ...(complete
+      ? {
+          deriveFacet: (q: string, articles: readonly RetrievedArticle[]) =>
+            deriveFacet(q, articles, complete),
+        }
+      : {}),
     /**
      * The index's own measured bands, not the global constant.
      *
@@ -126,7 +208,8 @@ export async function runQuery(
 
   let answered = false;
   let topScore = 0;
-  for await (const event of answerQuery(deps, query)) {
+  let refined = false;
+  for await (const event of answerQuery(deps, asked)) {
     if (event.kind === "sources") {
       answered = true;
       topScore = event.topScore;
@@ -138,9 +221,16 @@ export async function runQuery(
         // Say so when the tier in use isn't the one Settings shows selected.
         ...(notice ? { notice } : {}),
       });
-    } else if (event.kind === "disambiguation") {
-      emit({ kind: "disambiguation", options: event.options });
+    } else if (event.kind === "refine") {
+      refined = true;
+      emit({ kind: "refine", options: event.options, ...(event.facet ? { facet: event.facet } : {}) });
     } else if (event.kind === "refusal") {
+      // A model-declined refusal arrives *after* its sources, which already set
+      // `answered`. Left alone, the gap report would count a turn the user saw
+      // decline as a successful answer — and this is the case it most needs to
+      // see, since strong retrieval the model still couldn't use is the sharpest
+      // available signal that a page is missing or unclear.
+      answered = false;
       topScore = event.topScore;
       emit({
         kind: "refusal",
@@ -151,6 +241,36 @@ export async function runQuery(
       emit(event); // delta | done
     }
   }
-  // Log the query locally for the content-gap report (PRD 5.11.1).
-  await queryLogStore.log(db, { indexId, query, topScore, answered, at: Date.now() });
+  /**
+   * Log the query locally for the content-gap report (PRD 5.11.1).
+   *
+   * `outcome` exists because `answered` alone was misreporting the product. A
+   * turn that asked the user to disambiguate logged `answered: false`, so
+   * `gap.ts:isGap` filed it as *missing content* — the gap report was
+   * recommending pages that already existed, for questions the docs covered.
+   * Answering first fixes the miscount; recording the outcome makes it legible.
+   *
+   * `pickedUrl` is the more valuable half: a chip click is the user labelling
+   * which document answered their question, which is a relevance judgement no
+   * amount of tuning can synthesise. See retrieval/prior.ts.
+   */
+  await queryLogStore.log(db, {
+    indexId,
+    query,
+    topScore,
+    answered,
+    outcome: answered ? (refined ? "refined" : "answered") : "refused",
+    ...(focusUrl ? { pickedUrl: focusUrl } : {}),
+    ...(pickedFor ? { pickedFor } : {}),
+    at: Date.now(),
+  });
+
+  // A new label changes the priors, and dropping them is cheap — they are held
+  // apart from the session cache precisely so this can happen on every pick
+  // without rebuilding the vector matrix.
+  if (focusUrl) {
+    invalidatePriors(indexId);
+    // Cached results were ranked without this label, so they are now stale.
+    resultCache.clear(indexId);
+  }
 }

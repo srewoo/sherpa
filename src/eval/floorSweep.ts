@@ -86,6 +86,88 @@ export function recommendFloor(
     .find((r) => r.falseAnswerRate <= maxFalseAnswerRate);
 }
 
+/* ------------------------------------------------------------------ scatter */
+
+/**
+ * Scatter-threshold calibration, on exactly the same principle.
+ *
+ * `DEFAULT_REFINE.scatterDelta` decides when the leading pages are close enough
+ * in absolute cosine to be worth offering as alternatives. Its predecessor —
+ * a 15% *relative* gap on the min-max fused score — was picked by hand, never
+ * measured, and was arithmetically incapable of being right: min-max makes the
+ * top score ≈1.0 for every query, so it was thresholding on a constant.
+ *
+ * The lesson is that this constant needs measuring, not that 0.03 is correct.
+ * Like the refusal floor it is a property of the *model's* cosine distribution,
+ * so a sweep against the fixture embedder proves the arithmetic and nothing
+ * about the value; `real.eval.ts` is where the number gets settled.
+ */
+export interface ScatterCase {
+  /**
+   * Absolute cosine of the leading distinct pages, best first. Fewer than two
+   * means there was nothing to be ambiguous between.
+   */
+  readonly leadingSimilarities: readonly number[];
+  /** Whether this question genuinely had one right answer. */
+  readonly singleIntent: boolean;
+}
+
+export interface ScatterResult {
+  readonly delta: number;
+  /** Single-intent questions this delta would have cluttered with chips. */
+  readonly falseOffers: number;
+  /** Genuinely ambiguous questions it would have said nothing about. */
+  readonly missedOffers: number;
+  readonly falseOfferRate: number;
+  readonly missedOfferRate: number;
+}
+
+export const DEFAULT_SCATTER_DELTAS: readonly number[] = [
+  0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.2,
+];
+
+/** Would this delta have offered alternatives for this question? */
+export function wouldOffer(
+  { leadingSimilarities }: ScatterCase,
+  delta: number,
+  minDistinctPages = 3,
+): boolean {
+  if (leadingSimilarities.length < minDistinctPages) return false;
+  const leading = leadingSimilarities.slice(0, minDistinctPages);
+  return (leading[0] as number) - (leading[leading.length - 1] as number) <= delta;
+}
+
+export function sweepScatter(
+  cases: readonly ScatterCase[],
+  deltas: readonly number[] = DEFAULT_SCATTER_DELTAS,
+  minDistinctPages = 3,
+): ScatterResult[] {
+  const single = cases.filter((c) => c.singleIntent);
+  const ambiguous = cases.filter((c) => !c.singleIntent);
+
+  return deltas.map((delta) => {
+    const falseOffers = single.filter((c) => wouldOffer(c, delta, minDistinctPages)).length;
+    const missedOffers = ambiguous.filter((c) => !wouldOffer(c, delta, minDistinctPages)).length;
+    return {
+      delta,
+      falseOffers,
+      missedOffers,
+      falseOfferRate: single.length === 0 ? 0 : falseOffers / single.length,
+      missedOfferRate: ambiguous.length === 0 ? 0 : missedOffers / ambiguous.length,
+    };
+  });
+}
+
+export function formatScatterSweep(results: readonly ScatterResult[]): string {
+  const pct = (n: number): string => `${(n * 100).toFixed(1)}%`.padStart(7);
+  return [
+    "delta   false-offer   missed-offer",
+    ...results.map(
+      (r) => `${r.delta.toFixed(3)}   ${pct(r.falseOfferRate)}       ${pct(r.missedOfferRate)}`,
+    ),
+  ].join("\n");
+}
+
 export function formatFloorSweep(results: readonly FloorResult[]): string {
   const pct = (n: number): string => `${(n * 100).toFixed(1)}%`.padStart(7);
   return [

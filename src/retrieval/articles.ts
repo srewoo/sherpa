@@ -64,7 +64,16 @@ export const DEFAULT_ASSEMBLE: AssembleOptions = {
   // Two chunks either side rather than one: a step and its screenshot caption
   // routinely land in separate chunks, so a span of one still cuts procedures.
   neighbourSpan: 2,
-  maxArticles: 5,
+  /**
+   * The ceiling for the widest tier, not a per-answer count.
+   *
+   * Retrieval is tier-agnostic by design, so this has to cover the most
+   * capacious consumer — BYOK, whose 12k-token budget wants eight articles.
+   * At 5 that budget was unreachable and a paid model was being handed five
+   * sources for no stated reason. Each tier trims to its own `pack` in the
+   * answer service, so Nano still sees four.
+   */
+  maxArticles: 8,
   maxBodyChars: 6_000,
   fullPageForTop: true,
   fullPageMaxChars: 8_000,

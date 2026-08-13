@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { DEFAULT_REFINE } from "@/retrieval/refine.js";
 import {
+  sweepScatter,
+  wouldOffer,
   sweepFloors,
   recommendFloor,
   formatFloorSweep,
@@ -83,5 +86,45 @@ describe("formatFloorSweep", () => {
     const text = formatFloorSweep(sweepFloors([answerable(0.5), unanswerable(0.3)], [0.4]));
     expect(text).toContain("false-answer");
     expect(text).toContain("0.40");
+  });
+});
+
+describe("scatter sweep", () => {
+  /** Three pages within a whisker of each other: genuinely several answers. */
+  const scattered = { leadingSimilarities: [0.72, 0.71, 0.70], singleIntent: false };
+  /** One page clearly ahead: an answer, whatever trails it. */
+  const dominant = { leadingSimilarities: [0.82, 0.55, 0.50], singleIntent: true };
+  /** Nothing to be ambiguous between. */
+  const thin = { leadingSimilarities: [0.72, 0.71], singleIntent: true };
+
+  it("offers on a tight cluster and stays quiet on a clear leader", () => {
+    expect(wouldOffer(scattered, 0.03)).toBe(true);
+    expect(wouldOffer(dominant, 0.03)).toBe(false);
+  });
+
+  it("never offers when there are too few distinct pages", () => {
+    expect(wouldOffer(thin, 1)).toBe(false);
+  });
+
+  it("reports both sides of the trade at each delta", () => {
+    const results = sweepScatter([scattered, dominant, thin], [0.01, 0.03, 0.5]);
+    const tight = results.find((r) => r.delta === 0.01);
+    const loose = results.find((r) => r.delta === 0.5);
+
+    // Too tight: the genuine ambiguity is missed.
+    expect(tight?.missedOfferRate).toBe(1);
+    expect(tight?.falseOfferRate).toBe(0);
+    // Too loose: the clear winner gets cluttered with chips it doesn't need.
+    expect(loose?.missedOfferRate).toBe(0);
+    expect(loose?.falseOffers).toBe(1);
+  });
+
+  /**
+   * The shipped default has to survive its own sweep. A number that offers on
+   * a dominant leader is the old bug in new clothes.
+   */
+  it("keeps the shipped delta quiet on a dominant leader", () => {
+    expect(wouldOffer(dominant, DEFAULT_REFINE.scatterDelta)).toBe(false);
+    expect(wouldOffer(scattered, DEFAULT_REFINE.scatterDelta)).toBe(true);
   });
 });

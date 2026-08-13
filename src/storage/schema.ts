@@ -62,6 +62,27 @@ export interface QueryLogEntry {
   readonly query: string;
   readonly topScore: number;
   readonly answered: boolean;
+  /**
+   * What actually happened. `answered` is kept for records written before this
+   * field existed — `gap.ts` still reads it, and back-filling would mean a
+   * migration over a log whose whole purpose is to be cheap.
+   */
+  readonly outcome?: "answered" | "refused" | "refined";
+  /**
+   * The page the user chose from a refinement chip. A relevance label, produced
+   * by ordinary use and never leaving the machine (retrieval/prior.ts).
+   */
+  readonly pickedUrl?: string;
+  /**
+   * The question the pick actually answered.
+   *
+   * Load-bearing, and easy to get wrong: `query` on a pick turn is the chip's
+   * *label* — a page title. Learning "Zoom Phone" → the Zoom Phone page teaches
+   * nothing, because a title trivially matches its own page. The label worth
+   * binding to that URL is the question the user originally typed, which is the
+   * wording the next person will use too.
+   */
+  readonly pickedFor?: string;
   readonly feedback?: "up" | "down";
   readonly at: number;
 }

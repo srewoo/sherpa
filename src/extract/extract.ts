@@ -221,6 +221,41 @@ function tableToMarkdown(table: Element): string {
   return [line(rows[0]!), sep, ...rows.slice(1).map(line)].join("\n");
 }
 
+/** Tags whose own text the walker emits directly. */
+const BLOCK_TAGS = /^(p|blockquote|figcaption|dd|dt|caption|summary)$/;
+
+/**
+ * This element's own text, ignoring text that belongs to nested blocks.
+ *
+ * `textContent` would swallow a child paragraph's words into the parent and
+ * then emit them again when the walker reached that child, duplicating text and
+ * inflating BM25 term frequencies for whichever pages happen to nest their
+ * markup deeply.
+ */
+function ownText(node: Element): string {
+  const parts: string[] = [];
+  for (const child of [...node.childNodes]) {
+    // Node.TEXT_NODE === 3. Element children are handled by the walker itself.
+    if ((child as { nodeType?: number }).nodeType === 3) parts.push(child.textContent ?? "");
+  }
+  return clean(parts.join(" "));
+}
+
+/**
+ * Text an image carries.
+ *
+ * In a help centre this is rarely decorative: alt text and captions are where
+ * the UI label lives — "Record button in the toolbar", "the Share dialog" — and
+ * that label is very often the exact phrase someone searches for. A screenshot
+ * with its caption dropped is a step of a procedure with no words at all.
+ */
+function imageText(img: Element): string {
+  const alt = clean(img.getAttribute("alt") ?? "");
+  const title = clean(img.getAttribute("title") ?? "");
+  // Alt is the accessible name; title only adds when it says something else.
+  return alt && title && title !== alt ? `${alt} — ${title}` : alt || title;
+}
+
 function walk(node: Element, out: Block[]): void {
   for (const child of [...node.children]) {
     const tag = child.tagName.toLowerCase();
@@ -236,10 +271,27 @@ function walk(node: Element, out: Block[]): void {
     } else if (tag === "table") {
       const text = tableToMarkdown(child);
       if (text) out.push({ type: "table", text });
-    } else if (tag === "p" || tag === "blockquote") {
+    } else if (tag === "img") {
+      const text = imageText(child);
+      if (text) out.push({ type: "paragraph", text });
+    } else if (BLOCK_TAGS.test(tag)) {
       const text = clean(child.textContent);
       if (text) out.push({ type: "paragraph", text });
     } else {
+      /**
+       * Anything else: emit its own loose text, then descend.
+       *
+       * The descent alone used to be the whole branch, which silently dropped
+       * every word not wrapped in one of the tags above. A `<div class="note">
+       * You must be an admin.</div>` has no element children, so the walker
+       * recursed into nothing and the sentence never reached the index — and
+       * help centres put their most consequential lines in exactly those
+       * callout and alert divs. Emitting `ownText` first keeps loose text while
+       * `ownText`'s text-node filter keeps nested blocks from being counted
+       * twice.
+       */
+      const own = ownText(child);
+      if (own) out.push({ type: "paragraph", text: own });
       walk(child, out);
     }
   }

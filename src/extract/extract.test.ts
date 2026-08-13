@@ -158,3 +158,83 @@ describe("interface chrome (regression: help.mindtickle.com)", () => {
     expect(text).toContain("Disclosure content.");
   });
 });
+
+/**
+ * Text the walker used to throw away.
+ *
+ * `walk` emitted text only for headings, pre, lists, tables, p and blockquote,
+ * and recursed into everything else. Element children are the only thing it
+ * recursed into, so a container holding loose text had nothing to descend into
+ * and its words never reached the index. No retrieval tuning can recover text
+ * that was never stored, which is what makes this the most expensive class of
+ * bug in the pipeline — and the quietest.
+ */
+describe("text the walker must not drop", () => {
+  const textOf = (html: string): string =>
+    extract(`<main>${html}</main>`).blocks.map((b) => b.text).join(" | ");
+
+  /**
+   * Help centres put their most consequential sentences in callout divs —
+   * "You must be an admin", "This cannot be undone", "Enterprise only" — and
+   * those are exactly the lines a user searches for.
+   */
+  it("keeps loose text in a container with no block children", () => {
+    expect(textOf('<div class="note">You must be an admin to do this.</div>')).toContain(
+      "You must be an admin",
+    );
+  });
+
+  it("keeps a figure caption", () => {
+    expect(
+      textOf("<figure><img src='a.png'><figcaption>Click Record to start.</figcaption></figure>"),
+    ).toContain("Click Record to start.");
+  });
+
+  /**
+   * Alt text is where the UI label lives — "Record button in the toolbar" — and
+   * a screenshot with its alt dropped is a step of a procedure with no words.
+   */
+  it("keeps image alt text", () => {
+    expect(textOf("<p>Press this:</p><img src='a.png' alt='Record button in the toolbar'>")).toContain(
+      "Record button in the toolbar",
+    );
+  });
+
+  it("combines alt and title only when they differ", () => {
+    expect(textOf("<img src='a.png' alt='Record' title='Record'>")).toBe("Record");
+    expect(textOf("<img src='a.png' alt='Record' title='Starts capture'>")).toContain(
+      "Record — Starts capture",
+    );
+  });
+
+  it("ignores a decorative image with no text", () => {
+    expect(textOf("<p>Hello.</p><img src='spacer.gif' alt=''>")).toBe("Hello.");
+  });
+
+  it("keeps definition lists, captions and summaries", () => {
+    expect(textOf("<dl><dt>Scope</dt><dd>Which sites the key reaches.</dd></dl>")).toContain(
+      "Which sites the key reaches.",
+    );
+    expect(textOf("<details><summary>Advanced options</summary><p>Body.</p></details>")).toContain(
+      "Advanced options",
+    );
+  });
+
+  /**
+   * The counterpart risk: emitting a container's `textContent` would swallow a
+   * nested paragraph and then emit it again on descent, doubling the text and
+   * inflating BM25 term frequencies for deeply-nested markup.
+   */
+  it("does not emit nested block text twice", () => {
+    const text = textOf("<div>Lead in <p>Nested para.</p> tail out</div>");
+    expect(text.match(/Nested para\./g)).toHaveLength(1);
+    expect(text).toContain("Lead in");
+    expect(text).toContain("tail out");
+  });
+
+  it("still reaches a paragraph buried in wrapper divs", () => {
+    expect(textOf("<div><div><section><p>Real paragraph.</p></section></div></div>")).toBe(
+      "Real paragraph.",
+    );
+  });
+});

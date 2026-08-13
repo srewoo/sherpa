@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { verdictFor, verdictWithoutDense, DEFAULT_FLOORS } from "./confidence.js";
-import { chooseDisambiguation, DEFAULT_DISAMBIGUATION } from "./disambiguate.js";
+import { chooseRefinements, DEFAULT_REFINE } from "./refine.js";
 import { resolveFollowUp, isFollowUp, distinctiveTerms } from "./followUp.js";
 import { protectedTerms, cleanRewrite, rejectionReason, rewritePrompt } from "./rewrite.js";
 import type { RetrievedArticle } from "@/domain/retrieval.js";
@@ -12,13 +12,19 @@ describe("confidence bands", () => {
     expect(verdictFor(0.8, true)).toEqual({ kind: "answer", certainty: "confident" });
   });
 
-  /** The band that exists because one threshold could not carry the decision. */
+  /**
+   * The band that exists because one threshold could not carry the decision.
+   * Expressed against the constants rather than a literal: the bands moved from
+   * 0.45/0.65 to a measured 0.70/0.80 (`npm run eval:sites`), and a test that
+   * hard-codes a score is asserting yesterday's calibration.
+   */
   it("answers with a hedge in the overlap band", () => {
-    expect(verdictFor(0.55, true)).toEqual({ kind: "answer", certainty: "uncertain" });
+    const middle = (DEFAULT_FLOORS.refuse + DEFAULT_FLOORS.confident) / 2;
+    expect(verdictFor(middle, true)).toEqual({ kind: "answer", certainty: "uncertain" });
   });
 
   it("refuses below the refuse floor", () => {
-    expect(verdictFor(0.3, true)).toEqual({ kind: "refuse" });
+    expect(verdictFor(DEFAULT_FLOORS.refuse - 0.1, true)).toEqual({ kind: "refuse" });
   });
 
   it("refuses when there is nothing to answer from, whatever the score", () => {
@@ -46,83 +52,170 @@ describe("confidence bands", () => {
 
 /* ------------------------------------------------------------------ #3 */
 
-function article(url: string, title: string, rankScore: number): RetrievedArticle {
+/**
+ * `similarity` defaults to `rankScore` only for the cases that don't care about
+ * the difference. The cases that do pass both, because the difference between
+ * those two numbers is the entire bug this module was rewritten to fix.
+ */
+function article(
+  url: string,
+  title: string,
+  rankScore: number,
+  similarity: number | undefined = rankScore,
+): RetrievedArticle {
   return {
     url,
     title,
     headingPath: title,
     rankScore,
-    similarity: rankScore,
+    similarity,
     anchor: undefined,
     chunks: [],
     body: "b",
   };
 }
 
-describe("disambiguation", () => {
+describe("refinement offers", () => {
   /** The roleplay case: a topic named, several readings, no winner. */
-  it("offers options when the field is close and the pages differ", () => {
-    const options = chooseDisambiguation([
-      article("https://h/a", "Create a roleplay mission", 1.0),
-      article("https://h/b", "AI Scenario Creator", 0.95),
-      article("https://h/c", "Roleplay release notes", 0.92),
+  it("offers alternatives when the leading pages cluster in absolute cosine", () => {
+    const options = chooseRefinements([
+      article("https://h/a", "Create a roleplay mission", 1.0, 0.72),
+      article("https://h/b", "AI Scenario Creator", 0.95, 0.71),
+      article("https://h/c", "Roleplay release notes", 0.92, 0.70),
     ]);
-    expect(options?.map((o) => o.label)).toEqual([
+    expect(options.map((o) => o.label)).toEqual([
       "Create a roleplay mission",
       "AI Scenario Creator",
       "Roleplay release notes",
     ]);
   });
 
-  /** A clear winner is an answer, not an ambiguity. */
+  /** A pick has to lead somewhere; the URL is the whole point of the chip. */
+  it("carries the page URL, not just the label", () => {
+    const options = chooseRefinements([
+      article("https://h/a", "A", 1.0, 0.72),
+      article("https://h/b", "B", 0.99, 0.71),
+      article("https://h/c", "C", 0.98, 0.70),
+    ]);
+    expect(options.map((o) => o.url)).toEqual(["https://h/a", "https://h/b", "https://h/c"]);
+  });
+
+  /**
+   * The regression, stated directly.
+   *
+   * These `rankScore`s are 1.0 / 0.99 / 0.98 — min-max normalisation makes the
+   * top hit ≈1.0 for every query ever run, so the old rule ("is the runner-up
+   * within 15% of the leader?") fired here, and on most queries against any
+   * large help centre. The cosines say something completely different: 0.82
+   * against 0.55 is a clear winner. Judged on the score that means something,
+   * this is an answer, not a question.
+   */
+  it("stays silent when rank scores cluster but cosine shows a clear winner", () => {
+    expect(
+      chooseRefinements([
+        article("https://h/a", "Make calls with the Gong dialer", 1.0, 0.82),
+        article("https://h/b", "Record and drop voicemail messages", 0.99, 0.55),
+        article("https://h/c", "Listen to a call", 0.98, 0.5),
+      ]),
+    ).toEqual([]);
+  });
+
+  /**
+   * Rank order is not cosine order — the cross-encoder reorders the head, and
+   * so do the learned pick priors. Taking the ends of the rank-ordered list
+   * compares two arbitrary members and can even go negative, so a page that
+   * dominates on the absolute scale would be offered as one option among
+   * equals. Spread is a property of the set, not of its endpoints.
+   */
+  it("stays silent when a dominant page has been reordered out of first place", () => {
+    expect(
+      chooseRefinements([
+        article("https://h/a", "A", 1.0, 0.55),
+        article("https://h/b", "B", 0.99, 0.60),
+        // Reranked down the list, but far ahead on the scale that decides.
+        article("https://h/c", "C", 0.98, 0.82),
+      ]),
+    ).toEqual([]);
+  });
+
   it("stays silent when one result dominates", () => {
     expect(
-      chooseDisambiguation([
+      chooseRefinements([
         article("https://h/a", "A", 1.0),
         article("https://h/b", "B", 0.5),
         article("https://h/c", "C", 0.4),
       ]),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
   it("stays silent when there are too few distinct pages to choose between", () => {
     expect(
-      chooseDisambiguation([article("https://h/a", "A", 1.0), article("https://h/b", "B", 0.99)]),
-    ).toBeNull();
+      chooseRefinements([article("https://h/a", "A", 1.0), article("https://h/b", "B", 0.99)]),
+    ).toEqual([]);
+  });
+
+  /**
+   * Without an embedder there is no cosine, and BM25 scores are unbounded and
+   * corpus-relative — the same scale error `verdictWithoutDense` exists to
+   * avoid. Offering nothing is right; the answer still shows.
+   */
+  it("stays silent when the dense half never ran", () => {
+    // Built by hand: passing `undefined` to `article` would fall through to its
+    // default, which is the opposite of what this case is about.
+    const noDense = ["a", "b", "c"].map((id) => ({
+      ...article(`https://h/${id}`, id.toUpperCase(), 1.0),
+      similarity: undefined,
+    }));
+    expect(chooseRefinements(noDense)).toEqual([]);
+  });
+
+  /** Chunks of one page are not alternatives — the answer is spread across it. */
+  it("treats repeated hits on one page as one option", () => {
+    expect(
+      chooseRefinements([
+        article("https://h/a", "Zoom Phone", 1.0, 0.72),
+        article("https://h/a", "Zoom Phone", 0.99, 0.71),
+        article("https://h/b", "Gong dialer", 0.98, 0.7),
+      ]),
+    ).toEqual([]);
   });
 
   /** Help centres repeat titles; asking someone to pick at random is worse than guessing. */
   it("does not offer two options that read identically", () => {
     expect(
-      chooseDisambiguation([
-        article("https://h/a", "Create a mission", 1.0),
-        article("https://h/b", "Create a mission", 0.99),
-        article("https://h/c", "Create a mission", 0.98),
+      chooseRefinements([
+        article("https://h/a", "Create a mission", 1.0, 0.72),
+        article("https://h/b", "Create a mission", 0.99, 0.71),
+        article("https://h/c", "Create a mission", 0.98, 0.7),
       ]),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
   it("never offers more options than configured", () => {
-    const options = chooseDisambiguation(
+    const options = chooseRefinements(
       [
-        article("https://h/a", "A", 1.0),
-        article("https://h/b", "B", 0.99),
-        article("https://h/c", "C", 0.98),
-        article("https://h/d", "D", 0.97),
+        article("https://h/a", "A", 1.0, 0.72),
+        article("https://h/b", "B", 0.99, 0.715),
+        article("https://h/c", "C", 0.98, 0.71),
+        article("https://h/d", "D", 0.97, 0.705),
       ],
-      { ...DEFAULT_DISAMBIGUATION, maxOptions: 2 },
+      { ...DEFAULT_REFINE, maxOptions: 2 },
     );
     expect(options).toHaveLength(2);
   });
 
   it("shortens a long title at a word boundary", () => {
     const long = "How to configure the interactive video roleplay mission for admin users everywhere";
-    const options = chooseDisambiguation(
-      [article("https://h/a", long, 1.0), article("https://h/b", "B", 0.99), article("https://h/c", "C", 0.98)],
-      { ...DEFAULT_DISAMBIGUATION, maxLabelChars: 30 },
+    const options = chooseRefinements(
+      [
+        article("https://h/a", long, 1.0, 0.72),
+        article("https://h/b", "B", 0.99, 0.71),
+        article("https://h/c", "C", 0.98, 0.7),
+      ],
+      { ...DEFAULT_REFINE, maxLabelChars: 30 },
     );
-    expect(options?.[0]?.label.length).toBeLessThanOrEqual(31);
-    expect(options?.[0]?.label).toMatch(/…$/);
+    expect(options[0]?.label.length).toBeLessThanOrEqual(31);
+    expect(options[0]?.label).toMatch(/…$/);
   });
 });
 

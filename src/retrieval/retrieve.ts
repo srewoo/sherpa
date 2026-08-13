@@ -17,14 +17,15 @@
 
 import type { RetrievedArticle } from "@/domain/retrieval.js";
 import type { SherpaDatabase } from "@/storage/db.js";
+import type { StoredChunk } from "@/domain/records.js";
 import { normalizeInPlace, dot } from "@/embed/vecmath.js";
 import { cosineTopK } from "./cosine.js";
 import { loadSession, type IndexSession } from "./session.js";
 import { weightedFusion, applyBoost, DENSE_WEIGHT, SPARSE_WEIGHT, EXPANDED_WEIGHT } from "./fusion.js";
 import { assembleArticles, DEFAULT_ASSEMBLE, type AssembleOptions, type ScoredChunk } from "./articles.js";
 import { expandQuery, DEFAULT_EXPANSION, type ExpansionOptions } from "./expansion.js";
-import { hydeQuery, DEFAULT_HYDE, type HydeOptions, type Hypothesizer } from "./hyde.js";
 import { applyRerank, DEFAULT_RERANK, type RerankOptions, type Reranker } from "./rerank.js";
+import { priorBoosts, type PriorIndex } from "./prior.js";
 import { sameSection } from "@/lib/url.js";
 
 export interface Embedderish {
@@ -47,11 +48,30 @@ export interface RetrieveDeps {
    */
   readonly currentUrl?: string;
   /**
-   * Writes a hypothetical answer to embed instead of the raw question (HyDE).
-   * Optional: without it the query is embedded directly, which is what every
-   * caller did before and remains the fallback whenever generation fails.
+   * Restrict results to a single page.
+   *
+   * Set when the user picked a refinement chip. Unlike `currentUrl` — a nudge
+   * for a page they happen to be reading — this is a filter, because they named
+   * the document explicitly. It also makes the pick terminal: one page cannot
+   * scatter, so `chooseRefinements` returns nothing and the old ask-again loop
+   * has no state to re-enter.
    */
-  readonly hypothesize?: Hypothesizer;
+  readonly focusUrl?: string;
+  /**
+   * Pages this index has learned are the answer to questions like this one
+   * (prior.ts). Ranking only — never applied to `similarity`.
+   */
+  readonly priors?: PriorIndex;
+  /** Injected so decay is testable without controlling the clock. */
+  readonly now?: number;
+  /**
+   * Text for the *dense* half to embed instead of the raw question — a HyDE
+   * passage, when one was produced. Precomputed by `understand.ts` rather than
+   * generated here: retrieval used to make its own model call mid-search, which
+   * put a network round trip inside a function the perf budget measures and
+   * made the search untestable without a fake generator.
+   */
+  readonly denseText?: string;
   /**
    * Cross-encoder that rescores the top candidates (see rerank.ts). Optional:
    * the weights are an explicit opt-in, and without it first-stage ranking
@@ -68,7 +88,6 @@ export interface RetrieveOptions {
   readonly sectionBoost: number;
   /** Pseudo-relevance feedback for the sparse half. Set maxTerms to 0 to disable. */
   readonly expansion: ExpansionOptions;
-  readonly hyde: HydeOptions;
   readonly rerank: RerankOptions;
 }
 
@@ -77,7 +96,6 @@ export const DEFAULT_RETRIEVE: RetrieveOptions = {
   assemble: DEFAULT_ASSEMBLE,
   sectionBoost: 1.15,
   expansion: DEFAULT_EXPANSION,
-  hyde: DEFAULT_HYDE,
   rerank: DEFAULT_RERANK,
 };
 
@@ -128,6 +146,44 @@ async function rerankRanked(
   }
 }
 
+/**
+ * Every chunk of one page, ranked ones first.
+ *
+ * A pick is an explicit instruction to read *this document*, so the page is
+ * always returned in full even where retrieval only surfaced part of it —
+ * otherwise the answer is drawn from whichever fragments happened to match the
+ * chip's wording rather than from the page the user chose.
+ */
+function scopeToPage(
+  ranked: readonly ScoredChunk[],
+  pageChunks: readonly StoredChunk[] | undefined,
+  similarityOf: (vectorId: number) => number | undefined,
+): ScoredChunk[] {
+  // No such page in this index — a stale URL costs the scoping, not the answer.
+  if (!pageChunks || pageChunks.length === 0) return [...ranked];
+
+  const byVectorId = new Map(ranked.map((r) => [r.chunk.vectorId, r]));
+  const scored = pageChunks
+    .filter((c) => byVectorId.has(c.vectorId))
+    .map((c) => byVectorId.get(c.vectorId) as ScoredChunk)
+    .sort((a, b) => b.rankScore - a.rankScore);
+
+  const rest: ScoredChunk[] = pageChunks
+    .filter((c) => !byVectorId.has(c.vectorId))
+    .map((chunk) => ({
+      chunk,
+      // Below anything the retrievers ranked, so it never displaces a real hit.
+      rankScore: 0,
+      // Measured, never assumed — `topScore` and the source card read this.
+      similarity: similarityOf(chunk.vectorId),
+      // Neither retriever surfaced these, and saying so is the honest answer.
+      denseRank: undefined,
+      sparseRank: undefined,
+    }));
+
+  return [...scored, ...rest];
+}
+
 function rankMap(ids: readonly number[]): Map<number, number> {
   const m = new Map<number, number>();
   ids.forEach((id, i) => m.set(id, i));
@@ -144,13 +200,12 @@ export async function retrieve(
   if (count === 0) return { articles: [], topScore: 0, denseAvailable: true };
 
   /**
-   * Dense side: embed a hypothetical *answer* when a generator is available,
-   * because a question and the passage answering it don't look alike (see
-   * hyde.ts). Falls back to the plain question on any failure.
+   * Dense side: embed the HyDE passage when `understand` produced one, because
+   * a question and the passage answering it don't look alike (see hyde.ts).
+   * Absent — no model, HyDE off, or a rejected generation — means the plain
+   * query, which is the behaviour every caller had before HyDE existed.
    */
-  const denseText = deps.hypothesize
-    ? await hydeQuery(query, deps.hypothesize, options.hyde)
-    : query;
+  const denseText = deps.denseText ?? query;
 
   /**
    * Embedding can fail for reasons that have nothing to do with the query:
@@ -214,14 +269,26 @@ export async function retrieve(
     return measured;
   };
 
+  /**
+   * Learned preferences from past picks. Applied to the rank score alongside
+   * the section boost and, like it, never to `similarity` — the refusal floor
+   * must decide on the same absolute cosine whatever the index has learned.
+   */
+  const boosts = deps.priors
+    ? priorBoosts(query, deps.priors, deps.now ?? Date.now())
+    : undefined;
+
   const ranked: ScoredChunk[] = [];
   for (const { id, confidence } of fused) {
     const chunk = session.byId.get(id);
     if (!chunk) continue;
 
-    const boosted = deps.currentUrl && sameSection(chunk.url, deps.currentUrl)
-      ? applyBoost(confidence, options.sectionBoost)
-      : confidence;
+    let boosted = confidence;
+    if (deps.currentUrl && sameSection(chunk.url, deps.currentUrl)) {
+      boosted = applyBoost(boosted, options.sectionBoost);
+    }
+    const prior = boosts?.get(chunk.url);
+    if (prior !== undefined) boosted = applyBoost(boosted, prior);
 
     ranked.push({
       chunk,
@@ -244,7 +311,24 @@ export async function retrieve(
     ? await rerankRanked(deps.rerank, query, ranked, options.rerank)
     : ranked;
 
-  const articles = assembleArticles(finalOrder, session.byUrl, options.assemble);
+  /**
+   * Scope to the chosen page, if there is one.
+   *
+   * Taken from the index (`session.byUrl`) rather than by filtering the ranked
+   * candidates. Filtering looks equivalent and isn't: `finalOrder` is the *fused
+   * top-k*, so a page whose chunks didn't make that cut would silently fall back
+   * to unscoped results — the user picks one document and is answered from a
+   * different one, believing they scoped. Reading the page directly means a
+   * pick always returns the page that was picked.
+   *
+   * Chunks already ranked keep their scores and order; the rest are appended in
+   * document order so the whole page is available to the generator.
+   */
+  const scoped = deps.focusUrl
+    ? scopeToPage(finalOrder, session.byUrl.get(deps.focusUrl), similarityOf)
+    : finalOrder;
+
+  const articles = assembleArticles(scoped, session.byUrl, options.assemble);
   const topScore = articles.reduce((best, a) => Math.max(best, a.similarity ?? 0), 0);
   return { articles, topScore, denseAvailable: q !== null };
 }

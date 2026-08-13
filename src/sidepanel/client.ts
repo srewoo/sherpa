@@ -23,6 +23,22 @@ async function activeTabUrl(): Promise<string | undefined> {
   }
 }
 
+/**
+ * Preload the embedder and index session.
+ *
+ * Called when the panel learns which index is active, which is well before the
+ * user finishes typing. The work is identical either way; this only moves it
+ * off the critical path and into the seconds the user spends reading the page
+ * and composing a question.
+ */
+export function warmIndex(indexId: string): void {
+  if (!hasExtension) return;
+  void chrome.runtime
+    .sendMessage({ type: "ensure-offscreen" })
+    .then(() => chrome.runtime.sendMessage({ type: "query/warm", indexId }))
+    .catch(() => {});
+}
+
 export function askQuery(
   indexId: string,
   query: string,
@@ -33,6 +49,14 @@ export function askQuery(
    * search cannot see it.
    */
   recentQuestions: readonly string[] = [],
+  /**
+   * Scope retrieval to one page. Set when the question came from a refinement
+   * chip, where the user has named an exact document — searching for its title
+   * instead discards that and re-runs the query most likely to scatter again.
+   */
+  focusUrl?: string,
+  /** The question the pick answered, for the learned prior (prior.ts). */
+  pickedFor?: string,
 ): void {
   const requestId = `q-${(counter += 1)}`;
   const listener = (msg: unknown): void => {
@@ -54,6 +78,8 @@ export function askQuery(
         query,
         currentUrl,
         recentQuestions,
+        focusUrl,
+        pickedFor,
       });
     });
 }

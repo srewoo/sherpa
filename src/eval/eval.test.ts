@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { recallAtK, hitAtK, falseAnswerRate, groundedness } from "./metrics.js";
-import { runRetrievalEval, runAdversarialEval, passesGate } from "./harness.js";
+import { runRetrievalEval, runAdversarialEval, runRefinementEval, passesGate } from "./harness.js";
 
 describe("metrics", () => {
   it("recall@k is the fraction of relevant chunks retrieved in top-k", () => {
@@ -44,5 +44,39 @@ describe("harness", () => {
     const bad = await runAdversarialEval(["nonsense"], async () => true);
     expect(passesGate(retrieval, good)).toBe(true);
     expect(passesGate(retrieval, bad)).toBe(false);
+  });
+
+  /**
+   * Proving M4 has teeth.
+   *
+   * A gate that cannot fail is decoration, and this one is being added precisely
+   * because the existing gates could not fail on the bug that shipped. These two
+   * cases stand in for the old behaviour and the new one: a turn that hands the
+   * question back, and a turn that reaches an outcome.
+   */
+  describe("M4 blocked turns", () => {
+    const blocked = async () => ({ outcome: "blocked" as const, refinements: 3 });
+    const answered = async () => ({ outcome: "answer" as const, refinements: 3 });
+    const refused = async () => ({ outcome: "refusal" as const, refinements: 0 });
+
+    it("fails the gate when a question is handed back with no outcome", async () => {
+      const retrieval = await runRetrievalEval(golden, retrieveIds, [5]);
+      const adversarial = await runAdversarialEval(["nonsense"], async () => false);
+      const report = await runRefinementEval(golden, blocked);
+      expect(report.blockedRate).toBe(1);
+      expect(passesGate(retrieval, adversarial, report)).toBe(false);
+    });
+
+    it("counts a refusal as a real outcome, not a block", async () => {
+      const report = await runRefinementEval(golden, refused);
+      expect(report.blockedRate).toBe(0);
+    });
+
+    /** Offering alternatives beneath an answer is measured, never penalised. */
+    it("separates refinement from blocking", async () => {
+      const report = await runRefinementEval(golden, answered);
+      expect(report.blockedRate).toBe(0);
+      expect(report.refineRate).toBe(1);
+    });
   });
 });

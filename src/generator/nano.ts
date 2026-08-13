@@ -8,7 +8,7 @@
 import type { AnswerChunk, AnswerGenerator, AnswerRequest, TierAvailability } from "@/domain/generator.js";
 import type { LanguageModelOptions } from "./prompt-api.js";
 import { buildGroundedPrompt } from "./prompt.js";
-import { packContext, NANO_PACK } from "./context.js";
+import { NANO_PACK } from "./context.js";
 
 /**
  * Sherpa is English-first (PRD §0, assumption 6) and the embedding model is
@@ -45,6 +45,7 @@ export async function nanoComplete(prompt: string): Promise<string> {
 
 export class NanoGenerator implements AnswerGenerator {
   readonly tier = "nano" as const;
+  readonly pack = NANO_PACK;
 
   /** Query understanding runs on the same on-device session answers use. */
   complete(prompt: string): Promise<string> {
@@ -64,9 +65,9 @@ export class NanoGenerator implements AnswerGenerator {
     if (typeof LanguageModel === "undefined") {
       throw new Error("Nano unavailable");
     }
-    // Nano's window is small: keep the best few chunks within a token budget
-    // rather than sending everything retrieval expanded (PRD 5.8.5).
-    const context = packContext(req.context, NANO_PACK);
+    // Already packed to NANO_PACK by the answer service, so the cards the user
+    // sees and the context grounding this reply are the same list (PRD 5.8.5).
+    const context = req.context;
     const session = await LanguageModel.create(SESSION_OPTIONS);
     try {
       const stream = session.promptStreaming(buildGroundedPrompt(req.query, context));

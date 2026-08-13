@@ -3,52 +3,52 @@
 SHERPA MULTI-SITE CALIBRATION
 ==============================================================================
 
-model    Xenova/all-MiniLM-L6-v2
-sample   120 known-item + 120 cross-site + 15 off-domain per site
+model    Xenova/bge-small-en-v1.5
+sample   60 known-item + 60 cross-site + 15 off-domain per site
 
 RETRIEVAL (known-item: the article's own title — an upper bound)
   site                    pages  chunks   hit@1   hit@3   hit@5     MRR
-  help.egain.com           221     923    17.5%   39.2%   69.2%   0.326
-  help.gong.io             731    4615    38.3%   87.5%   99.2%   0.634
-  help.mindtickle.com     1315    8203    69.2%   84.2%   91.7%   0.773
+  help.egain.com           221     923    18.3%   46.7%   71.7%   0.381
+  help.gong.io             731    4615    33.3%   86.7%  100.0%   0.603
+  help.mindtickle.com     1406    8203    61.7%   96.7%   98.3%   0.784
 
 LATENCY (per query, warm session)
   site                    chunks      p50       p95   cold load
-  help.egain.com             923      3.9ms     7.6ms        23ms
-  help.gong.io              4615      9.0ms    12.4ms       119ms
-  help.mindtickle.com       8203     18.3ms    23.5ms       233ms
+  help.egain.com             923      5.5ms    11.4ms        26ms
+  help.gong.io              4615     12.9ms    17.5ms       190ms
+  help.mindtickle.com       8203     20.3ms    27.7ms       235ms
 
 SCORE DISTRIBUTIONS (absolute cosine — what the floor compares against)
   help.egain.com
-  answerable   n= 120  min 0.485  p25 0.691  median 0.756  p75 0.814  p95 0.876  max 0.934  mean 0.747
-  cross-site   n= 120  min 0.173  p25 0.251  median 0.305  p75 0.395  p95 0.471  max 0.504  mean 0.321
-  off-domain   n=  15  min 0.093  p25 0.156  median 0.173  p75 0.220  p95 0.272  max 0.272  mean 0.185
-  hard-probe   n=  15  min 0.186  p25 0.249  median 0.301  p75 0.429  p95 0.447  max 0.447  mean 0.317
-  → separation answerable p05 0.606 vs negatives p95 0.460   (clean gap)
+  answerable   n=  60  min 0.639  p25 0.832  median 0.864  p75 0.887  p95 0.918  max 0.935  mean 0.856
+  cross-site   n=  60  min 0.519  p25 0.581  median 0.625  p75 0.643  p95 0.689  max 0.716  mean 0.615
+  off-domain   n=  15  min 0.482  p25 0.488  median 0.524  p75 0.574  p95 0.600  max 0.600  mean 0.533
+  hard-probe   n=  15  min 0.501  p25 0.560  median 0.602  p75 0.627  p95 0.691  max 0.691  mean 0.597
+  → separation answerable p05 0.798 vs negatives p95 0.687   (clean gap)
 
   help.gong.io
-  answerable   n= 120  min 0.000  p25 0.449  median 0.544  p75 0.669  p95 0.785  max 0.878  mean 0.547
-  cross-site   n= 120  min 0.000  p25 0.382  median 0.432  p75 0.521  p95 0.591  max 0.740  mean 0.436
-  off-domain   n=  15  min 0.054  p25 0.158  median 0.185  p75 0.196  p95 0.340  max 0.340  mean 0.181
-  hard-probe   n=  15  min 0.146  p25 0.313  median 0.350  p75 0.401  p95 0.578  max 0.578  mean 0.364
-  → separation answerable p05 0.291 vs negatives p95 0.578   (OVERLAP — no threshold separates these perfectly)
+  answerable   n=  60  min 0.413  p25 0.719  median 0.764  p75 0.795  p95 0.859  max 0.896  mean 0.752
+  cross-site   n=  60  min 0.518  p25 0.637  median 0.657  p75 0.674  p95 0.721  max 0.741  mean 0.656
+  off-domain   n=  15  min 0.488  p25 0.518  median 0.550  p75 0.566  p95 0.615  max 0.615  mean 0.544
+  hard-probe   n=  15  min 0.528  p25 0.597  median 0.630  p75 0.661  p95 0.700  max 0.700  mean 0.627
+  → separation answerable p05 0.662 vs negatives p95 0.716   (OVERLAP — no threshold separates these perfectly)
 
   help.mindtickle.com
-  answerable   n= 120  min 0.337  p25 0.678  median 0.733  p75 0.787  p95 0.836  max 0.875  mean 0.720
-  cross-site   n= 120  min 0.294  p25 0.410  median 0.478  p75 0.513  p95 0.587  max 0.712  mean 0.465
-  off-domain   n=  15  min 0.138  p25 0.172  median 0.214  p75 0.278  p95 0.302  max 0.302  mean 0.217
-  hard-probe   n=  15  min 0.250  p25 0.336  median 0.386  p75 0.413  p95 0.496  max 0.496  mean 0.381
-  → separation answerable p05 0.552 vs negatives p95 0.581   (OVERLAP — no threshold separates these perfectly)
+  answerable   n=  60  min 0.000  p25 0.685  median 0.778  p75 0.799  p95 0.855  max 0.890  mean 0.693
+  cross-site   n=  60  min 0.000  p25 0.643  median 0.674  p75 0.692  p95 0.724  max 0.767  mean 0.644
+  off-domain   n=  15  min 0.000  p25 0.000  median 0.465  p75 0.533  p95 0.616  max 0.616  mean 0.375
+  hard-probe   n=  15  min 0.000  p25 0.577  median 0.601  p75 0.653  p95 0.675  max 0.675  mean 0.570
+  → separation answerable p05 0.000 vs negatives p95 0.714   (OVERLAP — no threshold separates these perfectly)
 
 RECOMMENDED REFUSAL FLOOR (lowest meeting false-answer ≤ 3%)
-  help.egain.com         0.50
-  help.gong.io           0.60
-  help.mindtickle.com    0.65
+  help.egain.com         0.70
+  help.gong.io           0.75
+  help.mindtickle.com    0.75
 
 SHIPPED CALIBRATION vs THE ORACLE
   site                   calibrated   confident   oracle   verdict
-  help.egain.com              0.520       0.600     0.50   ok
-  help.gong.io                0.453       0.533     0.60   33% false answers
-  help.mindtickle.com         0.569       0.649     0.65   6% false answers
+  help.egain.com              0.757       0.837     0.70   ok
+  help.gong.io                0.715       0.795     0.75   6% false answers
+  help.mindtickle.com         0.693       0.773     0.75   16% false answers
 
 ==============================================================================

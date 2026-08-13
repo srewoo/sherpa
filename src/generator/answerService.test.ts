@@ -4,6 +4,7 @@ import type { RetrieveResult } from "@/retrieval/retrieve.js";
 import { answerQuery, isRefusal, type AnswerEvent } from "./answerService.js";
 import { REFUSAL_TEXT } from "./prompt.js";
 import { ExtractiveGenerator } from "./extractive.js";
+import type { AnswerGenerator } from "@/domain/generator.js";
 
 function chunk(id: number, viaNeighbour = false): RetrievedChunk {
   return {
@@ -33,6 +34,7 @@ const gen = new ExtractiveGenerator();
 function stub(text: string) {
   return {
     tier: "nano" as const,
+    pack: { maxArticles: 8, tokenBudget: 100000 },
     availability: async () => ({ tier: "nano" as const, state: "available" as const }),
     async *answer() {
       yield { delta: text };
@@ -150,6 +152,7 @@ describe("refusal reason", () => {
         retrieve: async () => ({ articles: [article(topScore)], topScore, denseAvailable: true }),
         generator: {
           tier: "nano",
+          pack: { maxArticles: 8, tokenBudget: 100000 },
           availability: async () => ({ tier: "nano", state: "available" }),
           // eslint-disable-next-line require-yield
           answer: async function* () {
@@ -188,5 +191,164 @@ describe("refusal reason", () => {
 
   it("does not refuse at all when the model answers", async () => {
     expect(refusalOf(await run(0.75, "Here are the steps: 1. Do it."))).toBeUndefined();
+  });
+});
+
+describe("facet does not hold up the turn", () => {
+  const GEN: AnswerGenerator = {
+    tier: "extractive",
+    pack: { maxArticles: 8, tokenBudget: 100000 },
+    availability: async () => ({ tier: "extractive" as const, state: "available" as const }),
+    async *answer() {
+      yield { delta: "text" };
+    },
+  };
+
+  function article(url: string, title: string, similarity: number): RetrievedArticle {
+    return {
+      url,
+      title,
+      headingPath: title,
+      rankScore: similarity,
+      similarity,
+      anchor: undefined,
+      chunks: [],
+      body: "b",
+    };
+  }
+
+  /** Tightly clustered in absolute cosine, so refinements are offered. */
+  const SCATTERED = [
+    article("https://h/a", "Gong dialer", 0.72),
+    article("https://h/b", "Zoom Phone", 0.71),
+    article("https://h/c", "Mobile capture", 0.7),
+  ];
+
+  const baseDeps = {
+    retrieve: async () => ({ articles: SCATTERED, topScore: 0.72, denseAvailable: true }),
+    generator: GEN,
+    floors: { refuse: 0.4, confident: 0.65 },
+  };
+
+  /**
+   * `done` is load-bearing: the panel clears the streaming state, persists the
+   * turn and detaches its listener on it. `byok.ts` has no AbortSignal, so an
+   * unbounded await on a hung provider left a finished answer stuck in
+   * "writing…" forever and leaked the listener.
+   */
+  it("emits done even when the facet call never resolves", async () => {
+    const kinds: string[] = [];
+    for await (const event of answerQuery(
+      { ...baseDeps, facetTimeoutMs: 20, deriveFacet: () => new Promise(() => {}) },
+      "how to record a call?",
+    )) {
+      kinds.push(event.kind);
+    }
+    expect(kinds).toContain("refine");
+    expect(kinds[kinds.length - 1]).toBe("done");
+  });
+
+  /** Timing out costs the nicer question, never the chips. */
+  it("falls back to title chips when the facet times out", async () => {
+    let refine: { options: readonly unknown[]; facet?: unknown } | undefined;
+    for await (const event of answerQuery(
+      { ...baseDeps, facetTimeoutMs: 20, deriveFacet: () => new Promise(() => {}) },
+      "q",
+    )) {
+      if (event.kind === "refine") refine = event;
+    }
+    expect(refine?.options).toHaveLength(3);
+    expect(refine?.facet).toBeUndefined();
+  });
+
+  it("uses the facet when it arrives in time", async () => {
+    let refine: { facet?: { question: string } } | undefined;
+    for await (const event of answerQuery(
+      {
+        ...baseDeps,
+        deriveFacet: async () => ({
+          question: "Which platform?",
+          options: [{ label: "Zoom", url: "https://h/b" }],
+        }),
+      },
+      "q",
+    )) {
+      if (event.kind === "refine") refine = event;
+    }
+    expect(refine?.facet?.question).toBe("Which platform?");
+  });
+});
+
+describe("citations match what grounded the answer", () => {
+  function art(i: number): RetrievedArticle {
+    return {
+      url: `https://h/${i}`,
+      title: `Page ${i}`,
+      headingPath: `Page ${i}`,
+      rankScore: 1 - i / 100,
+      similarity: 0.8 - i / 100,
+      anchor: undefined,
+      chunks: [],
+      body: `body of page ${i}`,
+    };
+  }
+  const EIGHT = Array.from({ length: 8 }, (_, i) => art(i));
+
+  function generator(maxArticles: number): AnswerGenerator {
+    return {
+      tier: "nano",
+      pack: { maxArticles, tokenBudget: 100_000 },
+      availability: async () => ({ tier: "nano" as const, state: "available" as const }),
+      async *answer() {
+        yield { delta: "ok" };
+      },
+    };
+  }
+
+  async function sourcesFor(maxArticles: number): Promise<number> {
+    const deps = {
+      retrieve: async () => ({ articles: EIGHT, topScore: 0.8, denseAvailable: true }),
+      generator: generator(maxArticles),
+      floors: { refuse: 0.4, confident: 0.65 },
+    };
+    for await (const event of answerQuery(deps, "q")) {
+      if (event.kind === "sources") return event.sources.length;
+    }
+    return -1;
+  }
+
+  /**
+   * The failure: generators packed privately, so the panel rendered a card for
+   * every assembled article while the model had been sent only the first few.
+   * Card [5] could name a page the answer was never grounded in — a citation
+   * that cannot be checked, which is exactly what `markdown.ts` bounds
+   * out-of-range markers to prevent, reached from the other direction.
+   */
+  it("shows only the sources the model was actually given", async () => {
+    expect(await sourcesFor(4)).toBe(4);
+    expect(await sourcesFor(8)).toBe(8);
+  });
+
+  /** The generator receives the same list, not the unpacked one. */
+  it("hands the generator exactly the cited articles", async () => {
+    let received = -1;
+    const gen: AnswerGenerator = {
+      ...generator(3),
+      async *answer(req) {
+        received = req.context.length;
+        yield { delta: "ok" };
+      },
+    };
+    const deps = {
+      retrieve: async () => ({ articles: EIGHT, topScore: 0.8, denseAvailable: true }),
+      generator: gen,
+      floors: { refuse: 0.4, confident: 0.65 },
+    };
+    let shown = -1;
+    for await (const event of answerQuery(deps, "q")) {
+      if (event.kind === "sources") shown = event.sources.length;
+    }
+    expect(received).toBe(3);
+    expect(shown).toBe(3);
   });
 });

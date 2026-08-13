@@ -14,7 +14,8 @@ import type { PanelEvent } from "@/shared/answer.js";
 import { openSherpaDb, closeSherpaDb } from "@/storage/db.js";
 import { storageEstimate } from "@/storage/quota.js";
 import { previewCrawl } from "@/crawl/preview.js";
-import { invalidateSession } from "@/retrieval/session.js";
+import { invalidateSession, loadSession } from "@/retrieval/session.js";
+import { getEmbedder } from "@/embed/embedder.js";
 import { CrawlController, USER_AGENT } from "./runCrawlJob.js";
 import { fetchText, browserFetch, domLinks } from "./browserFetch.js";
 import { runQuery } from "./answerQueryJob.js";
@@ -139,13 +140,34 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
       controller = null;
       void closeSherpaDb();
       break;
+    /**
+     * Warm the caches. Fire-and-forget by design: this is an optimisation, and
+     * a failure here must cost nothing — whatever didn't load will simply load
+     * on the first query, exactly as it did before.
+     */
+    case "query/warm": {
+      const { indexId } = raw;
+      void getEmbedder().catch(() => {});
+      void openSherpaDb()
+        .then((db) => loadSession(db, indexId))
+        .catch(() => {});
+      break;
+    }
     case "query/ask": {
-      const { requestId, indexId, query, currentUrl } = raw;
+      /**
+       * `recentQuestions` was sent by the panel and dropped here, so
+       * `resolveFollowUp` has only ever seen an empty history — the whole
+       * follow-up feature was inert in the shipped extension while its unit
+       * tests passed. Destructured now, along with the new `focusUrl`.
+       */
+      const { requestId, indexId, query, currentUrl, recentQuestions, focusUrl, pickedFor } = raw;
       const emit = (event: PanelEvent): void => {
         void chrome.runtime.sendMessage({ type: "query/event", requestId, event }).catch(() => {});
       };
       void openSherpaDb()
-        .then((db) => runQuery(db, indexId, query, emit, currentUrl))
+        .then((db) =>
+          runQuery(db, indexId, query, emit, currentUrl, recentQuestions ?? [], focusUrl, pickedFor),
+        )
         .catch(() => emit({ kind: "done" }));
       break;
     }

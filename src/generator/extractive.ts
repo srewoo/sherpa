@@ -7,6 +7,7 @@
 
 import type { AnswerChunk, AnswerGenerator, AnswerRequest, TierAvailability } from "@/domain/generator.js";
 import { tokenize } from "@/retrieval/bm25.js";
+import { EXTRACTIVE_PACK } from "./context.js";
 
 function splitSentences(text: string): string[] {
   return (text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) ?? [text]).map((s) => s.trim()).filter(Boolean);
@@ -28,13 +29,14 @@ function bestSentences(body: string, queryTerms: ReadonlySet<string>, limit: num
 
 export class ExtractiveGenerator implements AnswerGenerator {
   readonly tier = "extractive" as const;
+  readonly pack = EXTRACTIVE_PACK;
 
   availability(): Promise<TierAvailability> {
     return Promise.resolve({ tier: this.tier, state: "available" });
   }
 
   async *answer(req: AnswerRequest): AsyncIterable<AnswerChunk> {
-    const direct = req.context.slice(0, 4);
+    const direct = req.context;
     if (direct.length === 0) {
       yield { delta: "I don't have that in this index." };
       return;

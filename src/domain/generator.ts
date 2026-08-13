@@ -39,8 +39,28 @@ export interface AnswerChunk {
  * resolved by the caller from the same `context` it passed in, so generators
  * never invent sources.
  */
+/**
+ * How much retrieved context a tier can take. Lives here rather than beside the
+ * packer so `AnswerGenerator` can declare it without the domain layer depending
+ * on the generator implementations.
+ */
+export interface PackOptions {
+  readonly maxArticles: number;
+  readonly tokenBudget: number;
+}
+
 export interface AnswerGenerator {
   readonly tier: AnswerTier;
+  /**
+   * This tier's context capacity, declared rather than applied internally.
+   *
+   * Each generator used to pack its own context, which meant the caller emitted
+   * *all* assembled articles as source cards while the model had only been sent
+   * the first few — so a citation list could show sources the answer was never
+   * grounded in. Declaring the limit lets one place pack once and guarantee
+   * that the cards and the grounding are the same list.
+   */
+  readonly pack: PackOptions;
   availability(): Promise<TierAvailability>;
   answer(req: AnswerRequest): AsyncIterable<AnswerChunk>;
   /**
