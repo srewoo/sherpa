@@ -57,14 +57,22 @@ export default defineManifest({
     "alarms",
     "idle",
   ],
-  // BYOK requests originate in an extension page. These precise origins are
-  // required for those fetches; optional documentation-site permissions do
-  // not grant access to an AI provider selected later in Settings.
-  host_permissions: [
-    "https://api.openai.com/*",
-    "https://api.anthropic.com/*",
-    "https://generativelanguage.googleapis.com/*",
-  ],
+  /**
+   * No required host permissions. Every origin Sherpa touches is asked for at
+   * the moment it is needed, and only then.
+   *
+   * The three BYOK provider APIs were briefly declared here as *required*, which
+   * had every installer accept access to OpenAI, Anthropic and Google for a
+   * feature that is off by default and that most users never enable — and it
+   * contradicted the note above. They are requested at runtime instead
+   * (`requestProviderPermission`), which works without a declaration of their
+   * own: Chrome only requires that a requested pattern be contained by a single
+   * declared one, and `https://…/*` below contains each provider origin.
+   *
+   * The cost is one click in Settings for BYOK users. That is the right side of
+   * the trade for an extension whose headline claim is that nothing leaves the
+   * device unless you ask.
+   */
   optional_host_permissions: ["http://*/*", "https://*/*"],
   /**
    * onnxruntime-web compiles the embedding model to WebAssembly, which MV3's
