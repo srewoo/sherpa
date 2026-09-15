@@ -5,7 +5,7 @@ import { indexRepo } from "@/storage/indexRepo.js";
 import { chunkStore } from "@/storage/chunks.js";
 import { parseCrawlConfig } from "@/domain/config.js";
 import { importIndexId } from "./importCorpusJob.js";
-import { buildCorpusExport, parseCorpusExport } from "@/eval/corpusExport.js";
+import { buildCorpusExport, parseCorpusExport } from "@/storage/corpusExport.js";
 import type { IndexMeta, StoredChunk } from "@/domain/records.js";
 
 const meta: IndexMeta = {

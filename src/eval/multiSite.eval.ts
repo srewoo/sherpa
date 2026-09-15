@@ -49,7 +49,7 @@ import { createEmbedder, type Embedder } from "@/embed/embedder.js";
 import { findModel, DEFAULT_EMBEDDING_MODEL_ID } from "@/embed/models.js";
 import type { StoredChunk } from "@/domain/records.js";
 
-import { parseCorpusExport, type CorpusExport } from "./corpusExport.js";
+import { parseCorpusExport, type CorpusExport } from "@/storage/corpusExport.js";
 import { sweepFloors, recommendFloor, formatFloorSweep, type FloorCase } from "./floorSweep.js";
 import { calibrateFloors } from "@/retrieval/calibrate.js";
 

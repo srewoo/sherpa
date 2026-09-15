@@ -49,3 +49,35 @@ describe("queryLogStore", () => {
     expect(latest?.feedback).toBe("down");
   });
 });
+
+describe("isFailed and the high-confidence decline", () => {
+  /**
+   * The case from the screenshot: three sources at 86%, 79% and 76%, and a
+   * model that still declined. The docs covered the question; the answer
+   * pipeline didn't. Filing that as missing content had the report
+   * recommending a page that already existed.
+   */
+  it("does not call a decline above the confident band a content gap", () => {
+    const stat = { query: "where do assets live", topScore: 0.86, answered: false };
+    expect(isFailed(stat, 0.7)).toBe(true); // old behaviour, kept for old callers
+    expect(isFailed(stat, 0.7, 0.8)).toBe(false);
+  });
+
+  it("still counts a decline that was only a middling match", () => {
+    expect(isFailed({ query: "x", topScore: 0.72, answered: false }, 0.7, 0.8)).toBe(true);
+  });
+
+  it("lets a thumbs-down outrank any score", () => {
+    // A human saying "this was wrong" is better evidence than a cosine.
+    expect(
+      isFailed({ query: "x", topScore: 0.95, answered: false, feedback: "down" }, 0.7, 0.8),
+    ).toBe(true);
+    expect(
+      isFailed({ query: "x", topScore: 0.95, answered: true, feedback: "down" }, 0.7, 0.8),
+    ).toBe(true);
+  });
+
+  it("still counts anything below the refusal floor, however it ended", () => {
+    expect(isFailed({ query: "x", topScore: 0.2, answered: true }, 0.7, 0.8)).toBe(true);
+  });
+});

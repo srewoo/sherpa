@@ -40,6 +40,24 @@ export function warmIndex(indexId: string): void {
     .catch(() => {});
 }
 
+/**
+ * A handle on a question in flight.
+ *
+ * Returned rather than accepted as yet another callback, because the only thing
+ * the caller can usefully *do* with a running turn is abandon it — and it needs
+ * that ability at a point in time the call site cannot predict.
+ */
+export interface AskHandle {
+  /**
+   * Abandon this turn.
+   *
+   * Idempotent, and safe after the answer has already landed: the offscreen
+   * document ignores a cancel for a request it no longer holds, which is the
+   * common case when the user clicks stop just as the last token arrives.
+   */
+  readonly cancel: () => void;
+}
+
 export function askQuery(
   indexId: string,
   query: string,
@@ -58,7 +76,28 @@ export function askQuery(
   focusUrl?: string,
   /** The question the pick answered, for the learned prior (prior.ts). */
   pickedFor?: string,
-): void {
+): AskHandle {
+  /**
+   * A preview build has no `chrome` at all, so this has to come before any use
+   * of it — including the listener registration below, which would throw and
+   * leave the turn pending forever rather than settling it.
+   *
+   * App.tsx already checks `hasExtension` before calling, so this is a second
+   * line of defence rather than the primary one; it exists because the first
+   * version of this guard sat *after* the listener and was therefore dead code
+   * that looked like protection.
+   */
+  if (!hasExtension) {
+    onEvent({
+      kind: "refusal",
+      nearest: [],
+      reason: "generator-error",
+      detail: "Sherpa is not running as an extension here, so there is nothing to search.",
+    });
+    onEvent({ kind: "done" });
+    return { cancel: () => {} };
+  }
+
   const requestId = `q-${(counter += 1)}`;
   let completed = false;
   const finish = (event: PanelEvent): void => {
@@ -85,6 +124,22 @@ export function askQuery(
     finish({ kind: "done" });
   };
 
+  /**
+   * Cancelling settles the turn locally as well as remotely.
+   *
+   * Two things have to happen and neither implies the other. The offscreen
+   * document needs to stop the provider request — that is the message — and the
+   * panel needs `done` so it clears "writing…", persists the turn and detaches
+   * this listener. Waiting for the offscreen document to send `done` back would
+   * leave a stop button that does nothing visible whenever the message fails to
+   * deliver, which is exactly when a user presses it.
+   */
+  const cancel = (): void => {
+    if (completed) return;
+    void chrome.runtime.sendMessage({ type: "query/cancel", requestId }).catch(() => {});
+    finish({ kind: "done" });
+  };
+
   // Make sure the offscreen doc is alive, then ask.
   void chrome.runtime
     .sendMessage({ type: "ensure-offscreen" })
@@ -105,6 +160,8 @@ export function askQuery(
       }),
     )
     .catch(fail);
+
+  return { cancel };
 }
 
 /** Record 👍/👎 against the logged query, feeding the gap report (PRD 5.9.8). */

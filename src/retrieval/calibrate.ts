@@ -36,6 +36,7 @@
 
 import type { ConfidenceFloors } from "./confidence.js";
 import { DEFAULT_FLOORS } from "./confidence.js";
+import type { Calibration } from "@/domain/records.js";
 
 /**
  * Questions from nowhere near a help centre.
@@ -123,12 +124,12 @@ export interface CalibrationInput {
   readonly positiveScores?: readonly number[];
 }
 
-export interface Calibration extends ConfidenceFloors {
-  /** How many probe questions the floor was derived from. */
-  readonly samples: number;
-  /** When it was measured, so a stale calibration is visible. */
-  readonly at: number;
-}
+/**
+ * Re-exported from `domain/records.ts`, where it is declared — `IndexMeta`
+ * stores one, and a stored record must not reach up into this layer to describe
+ * its own shape. The measurement that produces a `Calibration` stays here.
+ */
+export type { Calibration };
 
 /**
  * Headroom above the measured negative ceiling.

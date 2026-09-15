@@ -7,8 +7,9 @@
 
 import type { AnswerGenerator, ByokProvider } from "@/domain/generator.js";
 import { NanoGenerator } from "./nano.js";
-import { ByokGenerator } from "./byok.js";
+import { ByokGenerator, type ByokOptions } from "./byok.js";
 import { ExtractiveGenerator } from "./extractive.js";
+import { log } from "@/lib/log.js";
 
 export interface AnswerSettings {
   readonly mode: "auto" | "byok";
@@ -54,27 +55,42 @@ export interface GeneratorChoice {
  * which is enough to tell "no key saved" from "wrong key".
  */
 function logTierDecision(settings: AnswerSettings, tier: string, issue: string | null): void {
-  console.info("sherpa: answering tier", {
+  log.info("tier_selected", {
     tier,
     configuredMode: settings.mode,
     provider: settings.provider ?? "(none)",
     model: settings.model ?? "(none)",
-    apiKey: settings.apiKey?.trim() ? `present (${settings.apiKey.trim().length} chars)` : "absent",
+    // Never the key itself: only whether one is present and how long it is,
+    // which is enough to tell "no key saved" from "wrong key".
+    apiKeyPresent: Boolean(settings.apiKey?.trim()),
+    apiKeyLength: settings.apiKey?.trim().length ?? 0,
     issue: issue ?? "none",
   });
 }
 
-export async function selectGenerator(settings: AnswerSettings): Promise<GeneratorChoice> {
+/**
+ * `signal` and the retry knobs belong to the *call*, not to the settings, so
+ * they arrive separately. Only the BYOK tier can use them — the on-device tiers
+ * have no network to abandon — which is why they are threaded here rather than
+ * added to `AnswerSettings` where they would read as user preferences.
+ */
+export async function selectGenerator(
+  settings: AnswerSettings,
+  options: ByokOptions = {},
+): Promise<GeneratorChoice> {
   const issue = byokIssue(settings);
 
   if (settings.mode === "byok" && !issue) {
     logTierDecision(settings, "byok", issue);
     return {
-      generator: new ByokGenerator({
-        provider: settings.provider!,
-        model: settings.model!,
-        apiKey: settings.apiKey!.trim(),
-      }),
+      generator: new ByokGenerator(
+        {
+          provider: settings.provider!,
+          model: settings.model!,
+          apiKey: settings.apiKey!.trim(),
+        },
+        options,
+      ),
     };
   }
 
@@ -95,6 +111,9 @@ export async function selectGenerator(settings: AnswerSettings): Promise<Generat
 }
 
 /** Back-compat wrapper for callers that only need the generator. */
-export async function pickGenerator(settings: AnswerSettings): Promise<AnswerGenerator> {
-  return (await selectGenerator(settings)).generator;
+export async function pickGenerator(
+  settings: AnswerSettings,
+  options: ByokOptions = {},
+): Promise<AnswerGenerator> {
+  return (await selectGenerator(settings, options)).generator;
 }

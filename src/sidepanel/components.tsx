@@ -87,17 +87,32 @@ function SourceCard({ source }: { source: SourceView }): JSX.Element {
  * claimed nothing scored high enough directly above three sources reading 75%.
  * The user can see both. Only one of them can be true.
  */
-function refusalText(reason: RefusalReason, hasNearest: boolean): string {
+function refusalText(reason: RefusalReason, hasNearest: boolean, confident = false): string {
   const nearest = hasNearest ? " The nearest pages are below." : "";
   switch (reason) {
     case "below-floor":
       return `I don't have that in this index. Nothing scored above the confidence floor, so I won't guess.${nearest}`;
     case "model-declined":
-      // Retrieval succeeded; be specific about that, and point at the pages —
-      // they are frequently the answer even when the model couldn't extract it.
-      return `I found related pages but couldn't answer from them — the wording may not match how your docs put it.${
-        hasNearest ? " Try these, or rephrase the question." : ""
-      }`;
+      /**
+       * Two declines, two different truths.
+       *
+       * This used to be one sentence ending "the wording may not match how
+       * your docs put it", shown whatever the scores were — including above
+       * three sources reading 86%, 79% and 76%. At those numbers the wording
+       * *did* match, and the panel was inventing a diagnosis that the figures
+       * directly beneath it disproved. When retrieval was strong, say only what
+       * is known: the pages matched and the model wouldn't commit. The likely
+       * culprit is then the packed passage or the grounding prompt, neither of
+       * which is the user's problem to guess at — so they get an action instead
+       * of a theory.
+       */
+      return confident
+        ? `These pages matched your question closely, but the answering model wouldn't commit to an answer from them.${
+            hasNearest ? " Pick one below to answer from that page alone." : ""
+          }`
+        : `I found related pages but couldn't answer from them — the match was middling, so the wording may not line up with how your docs put it.${
+            hasNearest ? " Try these, or rephrase the question." : ""
+          }`;
     case "no-index":
       return "No index is selected yet. Crawl a documentation site first, then ask again.";
     case "generator-error":
@@ -158,11 +173,40 @@ export function TurnView({
       {answer.kind === "refusal" ? (
         <div className="answer">
           <div className="notice notice-amber" style={{ marginTop: 4 }}>
-            <span>{refusalText(answer.reason, answer.nearest.length > 0)}</span>
+            <span>{refusalText(answer.reason, answer.nearest.length > 0, answer.confident)}</span>
           </div>
           {answer.detail && (
             <div className="notice notice-amber" style={{ marginTop: 4 }}>
               <span>{answer.detail}</span>
+            </div>
+          )}
+          {/*
+            The same chips an answer gets, on the turn that needs them most.
+
+            Withholding them here was reasoned — "I couldn't answer from these"
+            followed by "did you mean one of these?" does read oddly — but the
+            result was a dead end whose only instruction was "rephrase", while
+            the control that actually works sat unused: a pick scopes retrieval
+            to one page and suspends the refusal floor, so it answers where the
+            unscoped question could not. The prompt is worded as an action
+            rather than a question, which removes the contradiction.
+          */}
+          {answer.refine && answer.refine.options.length > 0 && (
+            <div className="refine">
+              <div className="refine-prompt soft">
+                {answer.confident
+                  ? "Answer from one of these pages instead:"
+                  : (answer.refine.facet?.question ?? "Try one of these pages:")}
+              </div>
+              <ul className="option-chips">
+                {(answer.refine.facet?.options ?? answer.refine.options).map((option) => (
+                  <li key={option.url}>
+                    <button className="chip" type="button" onClick={() => onPick?.(option)}>
+                      {option.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {answer.nearest.length > 0 && (
@@ -178,10 +222,18 @@ export function TurnView({
         </div>
       ) : (
         <div className="answer">
-          <div className="answer-tier">
-            <span className="dot dot-terra" />
-            {tierLabel(answer.tier)}
-          </div>
+          {/*
+            The tier line is a provenance claim, so it is shown only when there
+            is provenance. A greeting answered locally searched nothing and ran
+            no model; labelling it "Extractive · ranked passages" would assert
+            a search that never happened.
+          */}
+          {!answer.conversational && (
+            <div className="answer-tier">
+              <span className="dot dot-terra" />
+              {tierLabel(answer.tier)}
+            </div>
+          )}
           {/*
             An honest hedge beats a confident guess. In this score band the
             match genuinely might be a near miss, and the user can judge that

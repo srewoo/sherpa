@@ -18,6 +18,10 @@ import {
   AUTO_REFRESH_RETRY_MINUTES,
   dueForRefresh,
 } from "@/crawl/autoRefresh.js";
+import { log } from "@/lib/log.js";
+import { setLogContext } from "@/lib/log.js";
+
+setLogContext("worker");
 
 const OFFSCREEN_PATH = "src/offscreen/offscreen.html";
 
@@ -85,7 +89,7 @@ function openPanelForTab(tabId: number): void {
     (err: unknown) => {
       // Never swallow this: a silent failure here is indistinguishable from a
       // dead toolbar icon, which is exactly how it was reported.
-      console.error("sherpa: could not open the side panel", err);
+      log.error("panel_open_failed", { error: String(err) });
     },
   );
 }
@@ -269,7 +273,7 @@ async function runDueRefresh(): Promise<void> {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== AUTO_REFRESH_ALARM && alarm.name !== AUTO_REFRESH_RETRY_ALARM) return;
   void runDueRefresh().catch((err: unknown) => {
-    console.error("sherpa: scheduled refresh failed", err);
+    log.error("scheduled_refresh_failed", { error: String(err) });
   });
 });
 

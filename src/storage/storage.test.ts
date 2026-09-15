@@ -54,6 +54,7 @@ describe("db migration", () => {
     const db = await freshDb();
     expect([...db.objectStoreNames].sort()).toEqual(
       [
+        "answerCache",
         "bm25",
         "chatSessions",
         "chunks",

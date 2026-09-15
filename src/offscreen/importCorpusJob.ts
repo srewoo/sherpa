@@ -28,7 +28,7 @@ import { vectorStore } from "@/storage/vectors.js";
 import { bm25Store } from "@/storage/bm25Store.js";
 import { estimateIndexBytes } from "@/storage/quota.js";
 import { getEmbedder } from "@/embed/embedder.js";
-import type { CorpusExport } from "@/eval/corpusExport.js";
+import type { CorpusExport } from "@/storage/corpusExport.js";
 
 export interface ImportProgress {
   readonly phase: "reading" | "embedding" | "indexing" | "done" | "error";

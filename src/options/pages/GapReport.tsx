@@ -50,8 +50,11 @@ export function GapReport(): JSX.Element {
     }
     void (async () => {
       const db = await openSherpaDb();
-      // The gap report asks "did we answer this?", which is the refuse band.
-      const floor = (await loadSettings()).floors.refuse;
+      // The gap report asks "did we answer this?", which is the refuse band —
+      // and "was that our fault?", which is the confident band.
+      const { floors } = await loadSettings();
+      const floor = floors.refuse;
+      const confidentFloor = floors.confident;
       const log = await queryLogStore.listByIndex(db, selected);
       const stats: QueryStat[] = log.map((e) => ({
         query: e.query,
@@ -59,7 +62,14 @@ export function GapReport(): JSX.Element {
         answered: e.answered,
         ...(e.feedback ? { feedback: e.feedback } : {}),
       }));
-      const failed = stats.filter((s) => isFailed(s, floor));
+      /**
+       * Declines that scored above the `confident` band are excluded.
+       *
+       * They are failures of the answer pipeline, not holes in the docs, and
+       * including them had the report recommending pages that already existed
+       * at 86% relevance — see `isFailed`.
+       */
+      const failed = stats.filter((s) => isFailed(s, floor, confidentFloor));
       setRows(buildGapReport(clusterFailures(failed)));
       setTotals({ queries: stats.length, failed: failed.length });
     })();

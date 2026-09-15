@@ -7,6 +7,7 @@
  */
 
 import type { AnswerGenerator, AnswerTier } from "@/domain/generator.js";
+import type { RefusalReason } from "@/domain/records.js";
 import type { RetrievedArticle } from "@/domain/retrieval.js";
 import type { RetrieveResult } from "@/retrieval/retrieve.js";
 import { REFUSAL_TEXT } from "./prompt.js";
@@ -26,31 +27,16 @@ import {
 import type { Facet } from "@/retrieval/facet.js";
 
 /**
- * Why an answer was withheld.
+ * Re-exported from `domain/records.ts`, where it is declared.
  *
- * These are genuinely different events and must not be collapsed. "Below the
- * floor" means retrieval found nothing close enough to be worth reading.
- * "Model declined" means retrieval found strong matches — the panel is showing
- * them at 75% — and the model still judged they did not answer the question.
- * Reporting the first when the second happened puts a claim on screen that the
- * numbers directly underneath it disprove.
+ * It moved there because `IndexMeta` — a stored record, and therefore squarely
+ * domain vocabulary — needs it, and a domain type reaching up into the
+ * generator layer to borrow one inverted the whole dependency graph: it put
+ * `domain` above `generator`, which is above `retrieval`, which is above
+ * `domain`, and produced twenty-six import cycles from one line. Kept exported
+ * here so every existing import site still reads naturally.
  */
-export type RefusalReason =
-  /** Retrieval found nothing close enough to be worth reading. */
-  | "below-floor"
-  /** Retrieval found strong matches; the model still couldn't answer from them. */
-  | "model-declined"
-  /** There is no index to search yet — not a judgement about anything. */
-  | "no-index"
-  /**
-   * The answering model itself failed — a rejected key, a model name that
-   * doesn't exist, a provider outage. Distinct from every other reason here
-   * because nothing is wrong with the question *or* the index, and the fix is
-   * in Settings rather than in the docs.
-   */
-  | "generator-error"
-  /** Restored from a conversation saved before the reason was recorded. */
-  | "unknown";
+export type { RefusalReason };
 
 export type AnswerEvent =
   | {
@@ -75,6 +61,22 @@ export type AnswerEvent =
       readonly facet?: Facet;
     }
   | { readonly kind: "delta"; readonly delta: string }
+  /**
+   * Discard the text streamed so far; what follows comes from another tier.
+   *
+   * The chosen model declined, and a tier that cannot decline is being tried in
+   * its place. This has to be an event rather than a silent swap because the
+   * declined sentence has *already* been streamed to the panel — the deltas go
+   * out as they arrive, and `isRefusal` can only be evaluated once the reply is
+   * complete. Without a reset the user would read "I don't have that in this
+   * index." with a passage extract appended underneath it.
+   */
+  | {
+      readonly kind: "restart";
+      readonly tier: AnswerTier;
+      /** Why the tier changed, shown as the same notice a fallback uses. */
+      readonly notice: string;
+    }
   | {
       readonly kind: "refusal";
       readonly nearest: readonly RetrievedArticle[];
@@ -82,6 +84,31 @@ export type AnswerEvent =
       readonly reason: RefusalReason;
       /** The provider's own message, when there is one worth showing. */
       readonly detail?: string;
+      /**
+       * Retrieval was not merely adequate, it was strong — the top match sat at
+       * or above the `confident` band and the model still declined.
+       *
+       * Carried because it changes what is *true*. The panel's copy for a
+       * decline used to guess out loud ("the wording may not match how your
+       * docs put it") and at 86% cosine that guess is almost certainly wrong:
+       * the wording matched, and something in the pipeline — the chunk that got
+       * packed, or a grounding prompt too strict to commit — is the likelier
+       * culprit. It also stops the gap report filing this as *missing content*
+       * and recommending a page that already exists.
+       */
+      readonly confident?: boolean;
+      /**
+       * Somewhere to go, offered *with* the refusal rather than withheld from it.
+       *
+       * These were deliberately suppressed here, on the reasoning that "I
+       * couldn't answer from these" followed by "did you mean one of these?"
+       * reads as a contradiction. It does — but suppressing them left the turn
+       * a dead end whose only remaining instruction was "rephrase", while the
+       * one mechanism that would have worked sat unused: picking a page sets
+       * `focused`, which suspends the floor by design and answers from that
+       * document alone. Sherpa was declining and hiding its own escape hatch.
+       */
+      readonly refine?: { readonly options: readonly RefineOption[]; readonly facet?: Facet };
     }
   | { readonly kind: "done" };
 
@@ -90,6 +117,20 @@ export interface AnswerServiceDeps {
   readonly generator: AnswerGenerator;
   /** Cosine bands: below `refuse` decline, above `confident` answer plainly. */
   readonly floors: ConfidenceFloors;
+  /**
+   * A tier that cannot decline, tried when the chosen model does.
+   *
+   * The Extractive tier returns the best-matching passages verbatim; it has no
+   * judgement to exercise and therefore no way to refuse. When retrieval was
+   * strong and a model still would not commit, a labelled passage extract from
+   * an 86%-matching page is strictly more use than a banner and three links —
+   * and the pages were going to be shown either way.
+   *
+   * Optional, and skipped when it *is* the answering tier: there is nothing to
+   * escalate to when extraction already ran, and re-running it would only
+   * stream the same text twice.
+   */
+  readonly fallback?: AnswerGenerator;
   /** Scatter rule for offering alternatives alongside the answer. */
   readonly refine?: RefineOptions;
   /**
@@ -124,6 +165,16 @@ export interface AnswerServiceDeps {
  * lost is a nicer question above chips that are shown either way.
  */
 export const FACET_TIMEOUT_MS = 3000;
+
+/**
+ * Shown when a decline is answered by extraction instead of a refusal.
+ *
+ * Says what happened rather than dressing it up. The passage is quoted from the
+ * pages, not composed, and claiming otherwise would be the same overreach as
+ * the copy this whole path replaces.
+ */
+export const ESCALATION_NOTICE =
+  "The answering model wouldn't commit to an answer from these pages, so this is a passage extract from them instead.";
 
 /** Resolve to `undefined` rather than wait forever. Never rejects. */
 async function withTimeout<T>(
@@ -250,21 +301,67 @@ export async function* answerQuery(
     return;
   }
 
-  // The grounding prompt tells the model to reply with REFUSAL_TEXT when the
-  // context doesn't answer the question, and it does — but retrieval had
-  // already cleared the score floor, so the UI was left showing "I don't have
-  // that in this index" above six confident-looking sources. Honour the
-  // model's judgement and present it as the refusal it is (PRD 5.8.8).
+  /**
+   * The model declined. Climb down the ladder before believing it.
+   *
+   * The grounding prompt asks for REFUSAL_TEXT when the context doesn't answer
+   * the question, and models oblige — but retrieval had already cleared the
+   * floor, so the panel showed "I found related pages but couldn't answer from
+   * them" above three sources reading 86%, 79% and 76%. The user can see both
+   * numbers. Only one of them can be true, and at 86% it is not the refusal.
+   *
+   * So a decline is now the *start* of the handling rather than the end of it:
+   * try a tier that cannot decline, and only refuse if that produces nothing
+   * either — and when refusing, offer the per-page pick that suspends the floor
+   * instead of withholding it.
+   */
   if (isRefusal(answer)) {
+    const confident = res.denseAvailable && res.topScore >= deps.floors.confident;
+    const facet =
+      refinements.length > 0
+        ? await withTimeout(facetPromise, deps.facetTimeoutMs ?? FACET_TIMEOUT_MS)
+        : undefined;
+    const refine =
+      refinements.length > 0
+        ? { options: refinements, ...(facet ? { facet } : {}) }
+        : undefined;
+
+    if (deps.fallback && deps.fallback.tier !== deps.generator.tier) {
+      /**
+       * Replace the declined sentence, don't append to it.
+       *
+       * The refusal text has already reached the panel as deltas — they stream
+       * as they arrive and `isRefusal` can only judge a finished reply — so the
+       * reset has to be explicit or the extract lands underneath "I don't have
+       * that in this index."
+       */
+      yield { kind: "restart", tier: deps.fallback.tier, notice: ESCALATION_NOTICE };
+      let extracted = "";
+      try {
+        for await (const chunk of deps.fallback.answer({ query, context })) {
+          extracted += chunk.delta;
+          yield { kind: "delta", delta: chunk.delta };
+        }
+      } catch {
+        // A fallback that fails changes nothing: we were about to refuse
+        // anyway, and the refusal below is a better report than its error.
+        extracted = "";
+      }
+      if (extracted.trim() !== "" && !isRefusal(extracted)) {
+        if (refine) yield { kind: "refine", ...refine };
+        yield { kind: "done" };
+        return;
+      }
+    }
+
     yield {
       kind: "refusal",
       nearest: context.slice(0, 3),
       topScore: res.topScore,
       reason: "model-declined",
+      ...(confident ? { confident } : {}),
+      ...(refine ? { refine } : {}),
     };
-    // No refinements here. "I couldn't answer from these" followed by "did you
-    // mean one of these?" reads as a contradiction, and the nearest-pages list
-    // already gives the user somewhere to go.
     yield { kind: "done" };
     return;
   }

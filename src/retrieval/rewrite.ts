@@ -18,6 +18,7 @@
  */
 
 import { tokenize } from "./bm25.js";
+import { log } from "@/lib/log.js";
 
 /** Produces raw model output for a prompt. */
 export type Completer = (prompt: string) => Promise<string>;
@@ -165,7 +166,7 @@ export async function rewriteQuery(
     const cleaned = cleanRewrite(await complete(rewritePrompt(query, recent)));
     const reason = rejectionReason(query, cleaned, options);
     if (reason) {
-      console.warn(`sherpa: discarding query rewrite (${reason})`, { query, cleaned });
+      log.warn("query_rewrite_discarded", { reason, query, cleaned });
       return query;
     }
     return cleaned;

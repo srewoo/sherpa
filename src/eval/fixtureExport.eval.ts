@@ -13,7 +13,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { CORPUS, GOLDEN, ADVERSARIAL, embeddedText } from "./fixtures/corpus.js";
-import { CORPUS_EXPORT_VERSION, type CorpusExport } from "./corpusExport.js";
+import { CORPUS_EXPORT_VERSION, type CorpusExport } from "@/storage/corpusExport.js";
 
 describe("fixture export", () => {
   it("writes a corpus and question set the real eval can consume", () => {

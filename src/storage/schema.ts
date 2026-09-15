@@ -7,7 +7,7 @@ import type { DBSchema } from "idb";
 import type { ChatSession, IndexMeta, StoredChunk, StoredPage } from "@/domain/records.js";
 
 export const DB_NAME = "sherpa";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 /**
  * How many conversations to keep (PRD 5.9.9). Old sessions are evicted oldest
@@ -53,6 +53,41 @@ export interface VectorShard {
 export interface Bm25Blob {
   readonly indexId: string;
   readonly data: ArrayBuffer;
+}
+
+/**
+ * One answer, kept so asking the same thing twice costs nothing.
+ *
+ * `retrieval/cache.ts` deliberately caches only the *search*, and says so: a
+ * cached turn still streams fresh text. That was the right call while every
+ * tier was local. With BYOK it means the user pays a second time, in their own
+ * money, for an answer Sherpa already has — and re-asking is not an edge case:
+ * people rephrase, reopen the panel on the same page, and a refinement chip
+ * re-queries by design.
+ *
+ * Echo solves the same problem with canned responses in Redis. The mechanism
+ * that transfers is not the storage but the discipline around the key: every
+ * input that can change the answer is in it, because a cache that returns the
+ * right answer to the wrong question is worse than no cache at all.
+ */
+export interface CachedAnswer {
+  /** Fingerprint of every input that can change the answer. See answerCache.ts. */
+  readonly key: string;
+  readonly indexId: string;
+  /** The question as asked, for a cache inspector and for debugging. */
+  readonly query: string;
+  readonly tier: "extractive" | "nano" | "byok";
+  /** Raw markdown, exactly as it streamed. Rendered on read. */
+  readonly markdown: string;
+  /** The source cards that were on screen with it, so citations still resolve. */
+  readonly sources: readonly unknown[];
+  readonly certainty: "confident" | "uncertain";
+  readonly topScore: number;
+  /** Why the answering tier differed from the one selected, if it did. */
+  readonly notice?: string;
+  readonly at: number;
+  /** Reads served. Kept so eviction can prefer answers nobody wants again. */
+  readonly hits: number;
 }
 
 /** One logged query, for the content-gap report (PRD 5.11.1). */
@@ -164,6 +199,12 @@ export interface SherpaDB extends DBSchema {
   bm25: { key: string; value: Bm25Blob };
   meta: { key: string; value: { key: string; value: unknown } };
   queryLog: { key: number; value: QueryLogEntry; indexes: { byIndex: string } };
+  answerCache: {
+    key: string;
+    value: CachedAnswer;
+    /** `byIndex` makes "drop this index's answers after a crawl" a keyed read. */
+    indexes: { byIndex: string; byAt: number };
+  };
   chatSessions: {
     key: string;
     value: ChatSession;

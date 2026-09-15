@@ -3,7 +3,7 @@ import type { IndexMeta } from "@/domain/records.js";
 import { openSherpaDb } from "@/storage/db.js";
 import { indexRepo } from "@/storage/indexRepo.js";
 import { chunkStore } from "@/storage/chunks.js";
-import { buildCorpusExport, parseCorpusExport } from "@/eval/corpusExport.js";
+import { buildCorpusExport, parseCorpusExport } from "@/storage/corpusExport.js";
 import type { ImportProgress } from "@/offscreen/importCorpusJob.js";
 import { loadSettings, saveSettings } from "@/settings/settings.js";
 import { storageEstimate, type StorageEstimate } from "@/storage/quota.js";

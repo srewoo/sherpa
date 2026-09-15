@@ -12,6 +12,17 @@
  * to commit next to the question set.
  */
 
+/**
+ * Moved here from `src/eval/`.
+ *
+ * It reads as eval infrastructure and is not: three shipping code paths depend
+ * on it — the options page's export button, the offscreen import job, and the
+ * message handler that starts one. Leaving it under `eval/` meant production
+ * imported the eval harness, which pulls fixtures toward the bundle and, worse,
+ * lets the thing being measured and the thing doing the measuring share a
+ * module. The eval still uses it, from here, which is the right direction.
+ */
+
 import { z } from "zod";
 import type { IndexMeta, StoredChunk } from "@/domain/records.js";
 import { crawlConfigSchema } from "@/domain/config.js";

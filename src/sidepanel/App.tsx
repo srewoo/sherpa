@@ -66,6 +66,27 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
       },
     };
   }
+  /**
+   * A conversational reply, complete on arrival.
+   *
+   * Not streamed, because there is nothing to stream — the text is a constant
+   * and arriving in one piece is the honest shape for it.
+   */
+  if (event.kind === "chat") {
+    textRef.text = event.text;
+    return {
+      ...turn,
+      answer: {
+        kind: "answer",
+        tier: "extractive",
+        markdown: event.text,
+        html: renderMarkdown(event.text, 0),
+        sources: [],
+        pending: false,
+        conversational: true,
+      },
+    };
+  }
   if (event.kind === "delta" && turn.answer.kind === "answer") {
     textRef.text += event.delta;
     return {
@@ -76,6 +97,28 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
         // Bound citations to the sources actually on screen, so the model
         // writing [6] against five sources cannot render a chip to nowhere.
         html: renderMarkdown(textRef.text, turn.answer.sources.length),
+      },
+    };
+  }
+  /**
+   * The tier changed mid-turn: throw away what was streamed and start again.
+   *
+   * The declined sentence has already arrived as deltas, so appending would
+   * leave "I don't have that in this index." above a passage extract. Clearing
+   * `textRef` as well as the rendered html is the whole point — it is the
+   * accumulator the delta branch appends to.
+   */
+  if (event.kind === "restart" && turn.answer.kind === "answer") {
+    textRef.text = "";
+    return {
+      ...turn,
+      answer: {
+        ...turn.answer,
+        tier: event.tier,
+        html: "",
+        markdown: "",
+        notice: event.notice,
+        pending: true,
       },
     };
   }
@@ -97,6 +140,8 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
         nearest: event.nearest as SourceView[],
         reason: event.reason,
         ...(event.detail ? { detail: event.detail } : {}),
+        ...(event.confident ? { confident: event.confident } : {}),
+        ...(event.refine ? { refine: event.refine } : {}),
       },
     };
   }
@@ -106,6 +151,13 @@ function applyEvent(turn: Turn, event: PanelEvent, textRef: { text: string }): T
 export function App(): JSX.Element {
   const [turns, setTurns] = useState<readonly Turn[]>(hasExtension ? [] : SEED_TURNS);
   const [draft, setDraft] = useState("");
+  /**
+   * The turn the composer's stop button would abandon, or null.
+   *
+   * Holds the turn id alongside the cancel so a `done` from an *older* turn
+   * cannot clear the button for a newer one still streaming.
+   */
+  const [inFlight, setInFlight] = useState<{ readonly id: string; readonly cancel: () => void } | null>(null);
   const [indexes, setIndexes] = useState<readonly IndexOption[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -302,11 +354,20 @@ export function App(): JSX.Element {
     scrollToEnd();
 
     const textRef = { text: "" };
+    /**
+     * Only one turn can be cancelled from the composer, and it is the newest.
+     *
+     * A refinement chip can start a second question while the first is still
+     * streaming, so `inFlight` holds a handle rather than a boolean and the
+     * older turn is simply left to finish. Stopping the one the user is
+     * watching is the behaviour they expect from a button under their cursor;
+     * stopping "all of them" would silently discard a turn already on screen.
+     */
     // Most recent first, and only questions — the resolver carries a subject
     // forward, never an answer.
     const recentQuestions = [...turns].reverse().map((t) => t.question);
 
-    askQuery(activeId, asked, (event) => {
+    const handle = askQuery(activeId, asked, (event) => {
       setTurns((prev) => {
         const next = prev.map((t) => {
           if (t.id !== id) return t;
@@ -325,8 +386,29 @@ export function App(): JSX.Element {
         }
         return next;
       });
-      if (event.kind !== "done") scrollToEnd();
+      if (event.kind === "done") {
+        // Clear only if this turn is still the one the button would stop.
+        setInFlight((current) => (current?.id === id ? null : current));
+      } else {
+        scrollToEnd();
+      }
     }, recentQuestions, focusUrl, pickedFor);
+    setInFlight({ id, cancel: handle.cancel });
+  };
+
+  /**
+   * Abandon the turn in flight.
+   *
+   * Worth a button rather than only a timeout because the timeouts in
+   * `byok.ts` are deliberately generous — long enough for a slow model to
+   * finish a real answer — and a user who has changed their mind after four
+   * seconds should not have to sit out thirty more before asking something
+   * else. The turn keeps whatever text arrived; a partial answer is still worth
+   * more than a turn that vanishes.
+   */
+  const stop = (): void => {
+    inFlight?.cancel();
+    setInFlight(null);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -509,17 +591,40 @@ export function App(): JSX.Element {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <button
-            className="composer-send"
-            type="button"
-            aria-label="Send question"
-            onClick={() => submit()}
-          >
-            <svg className="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
-          </button>
+          {/*
+            One button in two states rather than two buttons.
+
+            While a turn is streaming, "send" is the wrong affordance — pressing
+            it queues a second question against a panel that is still writing
+            the first — and an unrelated stop icon somewhere else in the footer
+            makes the user hunt for it. Same position, same size, so the thing
+            under the cursor is always the thing that acts on the turn in front
+            of them.
+          */}
+          {inFlight ? (
+            <button
+              className="composer-send composer-stop"
+              type="button"
+              aria-label="Stop answering"
+              onClick={stop}
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="7" y="7" width="10" height="10" rx="1.5" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              className="composer-send"
+              type="button"
+              aria-label="Send question"
+              onClick={() => submit()}
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="composer-hint">
           {/*

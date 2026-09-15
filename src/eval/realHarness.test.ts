@@ -3,7 +3,7 @@ import type { RetrievedArticle } from "@/domain/retrieval.js";
 import { parseQuestionSet, answerable, unanswerable } from "./questionSet.js";
 import { coverageOf, meanCoverage, mostMissed, normalizeForMatch } from "./coverage.js";
 import { runCase, summarize, sameArticle, type RealEvalDeps } from "./realHarness.js";
-import { buildCorpusExport, parseCorpusExport } from "./corpusExport.js";
+import { buildCorpusExport, parseCorpusExport } from "@/storage/corpusExport.js";
 import { parseCrawlConfig } from "@/domain/config.js";
 import type { StoredChunk } from "@/domain/records.js";
 

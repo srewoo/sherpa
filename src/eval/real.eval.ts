@@ -36,7 +36,7 @@ import { isRefusal } from "@/generator/answerService.js";
 import type { StoredChunk } from "@/domain/records.js";
 import type { ByokProvider } from "@/domain/generator.js";
 
-import { parseCorpusExport } from "./corpusExport.js";
+import { parseCorpusExport } from "@/storage/corpusExport.js";
 import { parseQuestionSet } from "./questionSet.js";
 import { runCase, summarize, formatReport, type EvalCaseResult } from "./realHarness.js";
 import { sweepFloors, recommendFloor, formatFloorSweep, type FloorCase } from "./floorSweep.js";

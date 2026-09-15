@@ -1,12 +1,12 @@
 {
   "name": "sherpa",
-  "version": "0.2",
+  "version": "0.3",
   "description": "Local-first help-site answer engine \u2014 a Chrome MV3 extension that crawls a documentation site, indexes it in the browser, and answers questions from that index with zero servers.",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "node scripts/copy-ort.mjs && vite",
-    "build": "node scripts/copy-ort.mjs && tsc --noEmit && vite build && node scripts/verify-bundle.mjs && node scripts/package.mjs",
+    "build": "node scripts/copy-ort.mjs && tsc --noEmit && npm run lint:deps && vite build && node scripts/verify-bundle.mjs && node scripts/package.mjs",
     "fetch:model": "node scripts/fetch-model.mjs",
     "bench": "vitest run --config vitest.bench.config.ts",
     "typecheck": "tsc --noEmit",
@@ -21,7 +21,9 @@
     "eval:corpus": "vitest run --config vitest.eval.config.ts src/eval/buildCorpus.eval.ts",
     "eval:fixture": "vitest run --config vitest.eval.config.ts src/eval/fixtureExport.eval.ts",
     "eval:sites": "vitest run --config vitest.eval.config.ts src/eval/multiSite.eval.ts",
-    "eval:rerank": "vitest run --config vitest.eval.config.ts src/eval/rerankAblation.eval.ts"
+    "eval:rerank": "vitest run --config vitest.eval.config.ts src/eval/rerankAblation.eval.ts",
+    "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
+    "deps:graph": "depcruise src --config .dependency-cruiser.cjs --output-type dot | dot -T svg -o artifacts/deps.svg"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
@@ -37,6 +39,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "dependency-cruiser": "^17.4.3",
     "fake-indexeddb": "^6.0.0",
     "linkedom": "^0.18.13",
     "typescript": "^5.5.4",

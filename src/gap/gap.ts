@@ -15,8 +15,39 @@ export interface QueryStat {
   readonly feedback?: "up" | "down";
 }
 
-export function isFailed(stat: QueryStat, floor: number): boolean {
-  return !stat.answered || stat.topScore < floor || stat.feedback === "down";
+/**
+ * Did this query reveal a hole in the documentation?
+ *
+ * The distinction that was missing: a turn can fail *and* the content can be
+ * there. When retrieval scored a page at 86% and the answering model still
+ * declined, the docs covered the question — something in the answer pipeline
+ * did not. Counting that as a content gap made the report recommend writing
+ * pages that already existed, which is the most expensive wrong answer this
+ * feature can give.
+ *
+ * `confidentFloor` is what separates the two. Above it, a refusal is evidence
+ * about Sherpa; below it, evidence about the docs. Optional so callers written
+ * before this existed keep their previous behaviour rather than silently
+ * changing what their report means — and a 👎 always counts, because a human
+ * saying "this was wrong" outranks any score.
+ */
+export function isFailed(stat: QueryStat, floor: number, confidentFloor?: number): boolean {
+  if (stat.feedback === "down") return true;
+  if (stat.topScore < floor) return true;
+  if (!stat.answered) {
+    /**
+     * A high-confidence decline is a pipeline signal, not a missing page.
+     *
+     * Derived from the score rather than a new stored field on purpose: the
+     * query log is deliberately cheap, and every entry ever written already
+     * carries `topScore`. A new `outcome` value would mean a migration over a
+     * log whose whole point is that it costs nothing to append to — and would
+     * leave every historical entry unclassifiable anyway.
+     */
+    if (confidentFloor !== undefined && stat.topScore >= confidentFloor) return false;
+    return true;
+  }
+  return false;
 }
 
 /** Jaccard similarity of two query token sets, in [0,1]. */

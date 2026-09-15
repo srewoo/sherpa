@@ -44,6 +44,7 @@ import { chunkPage } from "@/lib/chunk.js";
 import { extractPage } from "@/extract/extract.js";
 import { getEmbedder, DEFAULT_EMBEDDING_MODEL_ID } from "@/embed/embedder.js";
 import { browserFetch, domLinks, fetchText } from "./browserFetch.js";
+import { log } from "@/lib/log.js";
 
 /**
  * How many of the index's own titles to score when calibrating.
@@ -339,7 +340,7 @@ export class CrawlController {
       // Anything unexpected — a failed discovery, storage giving out — must
       // still land the index in a consistent state and release `running`, or
       // Resume silently does nothing and the crawl can never be picked up.
-      console.error("sherpa: crawl loop failed", error);
+      log.error("crawl_loop_failed", { error: String(error) });
       this.running = false;
       await this.finalize({ reason: "failed", status: 0 });
     }
@@ -393,7 +394,7 @@ export class CrawlController {
       onIndexError: (url, error) => {
         // Surfaced rather than swallowed: a page that consistently fails to
         // index is a extraction bug worth seeing in the console.
-        console.warn("sherpa: could not index", url, error);
+        log.warn("page_index_failed", { url, error: String(error) });
       },
       shouldStop: () => this.paused,
     });
@@ -557,7 +558,7 @@ export class CrawlController {
         const floors =
           indexedSomething && (phase === "done" || phase === "error")
             ? await this.calibrate(indexId).catch((error) => {
-                console.warn("sherpa: floor calibration failed, using settings", error);
+                log.warn("calibration_failed", { error: String(error) });
                 return undefined;
               })
             : undefined;

@@ -55,6 +55,14 @@ function migrate(db: IDBPDatabase<SherpaDB>, oldVersion: number, transaction: Up
     sessions.createIndex("byIndex", "indexId");
     sessions.createIndex("byUpdated", "updatedAt");
   }
+  if (oldVersion < 5) {
+    // Answer cache, so a repeat question costs no tokens (answerCache.ts).
+    const answers = db.createObjectStore("answerCache", { keyPath: "key" });
+    answers.createIndex("byIndex", "indexId");
+    // `byAt` is what makes eviction a bounded range read rather than a full
+    // scan of every answer ever cached.
+    answers.createIndex("byAt", "at");
+  }
 }
 
 /**

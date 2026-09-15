@@ -28,7 +28,7 @@ import { parseRobots, isAllowed, crawlDelay } from "@/lib/robots.js";
 import { isUnsafeToFetch } from "@/crawl/safety.js";
 import { isLoginShell } from "@/crawl/authwall.js";
 import { fnv1a } from "@/lib/hash.js";
-import { CORPUS_EXPORT_VERSION, type CorpusExport, type ExportedChunk } from "./corpusExport.js";
+import { CORPUS_EXPORT_VERSION, type CorpusExport, type ExportedChunk } from "@/storage/corpusExport.js";
 
 const ROOT = process.env["SHERPA_ROOT"] ?? "";
 const OUT = process.env["SHERPA_CORPUS"] ?? "eval/corpus.json";

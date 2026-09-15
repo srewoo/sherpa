@@ -14,7 +14,9 @@
  * right answer to the wrong question is worse than no cache at all.
  */
 
-import type { RetrieveResult } from "./retrieve.js";
+// From the domain layer, not from `retrieve.ts`: importing it from the
+// producer made cache -> retrieve -> session -> cache a real cycle.
+import type { RetrieveResult } from "@/domain/retrieval.js";
 
 export interface CacheKeyParts {
   readonly indexId: string;

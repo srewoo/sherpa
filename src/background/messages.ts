@@ -127,6 +127,21 @@ export type Message =
        */
       readonly settings?: Settings;
     }
+  /**
+   * Abandon a question already in flight.
+   *
+   * The panel had no way to say this, and the absence was load-bearing: with no
+   * deadline on the provider fetch (see `byok.ts`) a stalled turn sat in
+   * "writing…" with its message listener attached and `done` never emitted, and
+   * the only escape was closing the panel. A deadline fixes the hang; this
+   * fixes the *wait* — a user who has changed their mind after four seconds
+   * should not have to sit out a forty-second timeout to ask something else.
+   *
+   * Carries the `requestId` rather than cancelling "the current query", because
+   * a refinement chip can start a second turn while the first is still
+   * streaming, and cancelling the wrong one is worse than cancelling nothing.
+   */
+  | { readonly type: "query/cancel"; readonly requestId: string }
   | { readonly type: "query/event"; readonly requestId: string; readonly event: PanelEvent };
 
 /** Narrowing helper so listeners can switch on `msg.type` exhaustively. */

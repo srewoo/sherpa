@@ -45,7 +45,17 @@ export const indexRepo = {
    */
   async delete(db: SherpaDatabase, id: string): Promise<void> {
     const tx = db.transaction(
-      ["indexRegistry", "pages", "chunks", "vectors", "bm25", "frontier", "queryLog", "chatSessions"],
+      [
+        "indexRegistry",
+        "pages",
+        "chunks",
+        "vectors",
+        "bm25",
+        "frontier",
+        "queryLog",
+        "chatSessions",
+        "answerCache",
+      ],
       "readwrite",
     );
     await tx.objectStore("pages").delete(IDBKeyRange.bound([id], [id, STR_MAX]));
@@ -65,6 +75,18 @@ export const indexRepo = {
     const sessions = tx.objectStore("chatSessions");
     for (const row of await sessions.index("byIndex").getAll(id)) {
       await sessions.delete(row.id);
+    }
+
+    /**
+     * Cached answers go with the index they were answered from.
+     *
+     * Leaving them behind would be worse than wasteful: the key carries the
+     * index id, so a rebuilt index reusing that id could serve an answer citing
+     * pages from a site the user deleted.
+     */
+    const answers = tx.objectStore("answerCache");
+    for (const key of await answers.index("byIndex").getAllKeys(id)) {
+      await answers.delete(key);
     }
 
     await tx.objectStore("indexRegistry").delete(id);

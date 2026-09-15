@@ -35,6 +35,7 @@ import {
   type RewriteOptions,
 } from "./rewrite.js";
 import { hydeText, DEFAULT_HYDE, type HydeOptions } from "./hyde.js";
+import { log } from "@/lib/log.js";
 
 export interface QueryPlan {
   /** The text retrieval searches with. Never empty. */
@@ -163,7 +164,7 @@ export async function understand(
       const cleaned = cleanRewrite(rawQuery);
       const reason = rejectionReason(resolved, cleaned, options.rewrite);
       if (reason) {
-        console.warn(`sherpa: discarding query rewrite (${reason})`, { query: resolved, cleaned });
+        log.warn("query_rewrite_discarded", { reason, query: resolved, cleaned });
       } else {
         search = cleaned;
         source = "model";

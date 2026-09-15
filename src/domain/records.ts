@@ -4,8 +4,49 @@
  */
 
 import type { CrawlConfig } from "./config.js";
-import type { RefusalReason } from "@/generator/answerService.js";
-import type { Calibration } from "@/retrieval/calibrate.js";
+import type { ConfidenceFloors } from "./retrieval.js";
+
+/**
+ * Why an answer was withheld.
+ *
+ * These are genuinely different events and must not be collapsed. "Below the
+ * floor" means retrieval found nothing close enough to be worth reading.
+ * "Model declined" means retrieval found strong matches — the panel is showing
+ * them at 75% — and the model still judged they did not answer the question.
+ * Reporting the first when the second happened puts a claim on screen that the
+ * numbers directly underneath it disprove.
+ */
+export type RefusalReason =
+  /** Retrieval found nothing close enough to be worth reading. */
+  | "below-floor"
+  /** Retrieval found strong matches; the model still couldn't answer from them. */
+  | "model-declined"
+  /** There is no index to search yet — not a judgement about anything. */
+  | "no-index"
+  /**
+   * The answering model itself failed — a rejected key, a model name that
+   * doesn't exist, a provider outage. Distinct from every other reason here
+   * because nothing is wrong with the question *or* the index, and the fix is
+   * in Settings rather than in the docs.
+   */
+  | "generator-error"
+  /** Restored from a conversation saved before the reason was recorded. */
+  | "unknown";
+
+
+/**
+ * Refusal bands measured against one corpus, stored on its index.
+ *
+ * Declared here rather than in `retrieval/calibrate.ts` for the same reason as
+ * `RefusalReason`: `IndexMeta` holds one, and a stored record must not have to
+ * reach up into the retrieval layer to describe its own shape.
+ */
+export interface Calibration extends ConfidenceFloors {
+  /** How many probe questions the floor was derived from. */
+  readonly samples: number;
+  /** When it was measured, so a stale calibration is visible. */
+  readonly at: number;
+}
 
 export const SCHEMA_VERSION = 2;
 

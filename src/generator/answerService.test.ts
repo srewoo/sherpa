@@ -352,3 +352,133 @@ describe("citations match what grounded the answer", () => {
     expect(shown).toBe(3);
   });
 });
+
+/**
+ * The screenshot case: three sources at 86/79/76 and a banner claiming the
+ * wording might not match. At those scores the wording matched, and the turn
+ * offered nothing to do about it.
+ */
+describe("a high-confidence decline climbs the ladder before refusing", () => {
+  const strong = async (): Promise<RetrieveResult> => ({
+    articles: [hit(0), hit(1), hit(2)],
+    topScore: 0.86,
+    denseAvailable: true,
+  });
+  const floors = { refuse: 0.7, confident: 0.8 };
+
+  it("answers by extraction rather than refusing when the model declines", async () => {
+    const events = await drain(
+      answerQuery({ retrieve: strong, generator: stub(REFUSAL_TEXT), floors, fallback: gen }, "q"),
+    );
+    const restart = events.find((e) => e.kind === "restart");
+    expect(restart).toBeDefined();
+    expect((restart as Extract<AnswerEvent, { kind: "restart" }>).tier).toBe("extractive");
+    // No refusal at all: there was something worth showing and it got shown.
+    expect(events.some((e) => e.kind === "refusal")).toBe(false);
+    expect(events.at(-1)?.kind).toBe("done");
+  });
+
+  it("restarts before the extract so the declined sentence is replaced, not appended", async () => {
+    const events = await drain(
+      answerQuery({ retrieve: strong, generator: stub(REFUSAL_TEXT), floors, fallback: gen }, "q"),
+    );
+    const restartAt = events.findIndex((e) => e.kind === "restart");
+    const deltasAfter = events.slice(restartAt + 1).filter((e) => e.kind === "delta");
+    expect(restartAt).toBeGreaterThan(-1);
+    expect(deltasAfter.length).toBeGreaterThan(0);
+  });
+
+  it("does not escalate to the tier that is already answering", async () => {
+    // Extraction declining is not a thing that happens, but if it did there is
+    // nothing to escalate to and re-running it would stream the same text twice.
+    const events = await drain(
+      answerQuery({ retrieve: strong, generator: gen, floors, fallback: gen }, "q"),
+    );
+    expect(events.some((e) => e.kind === "restart")).toBe(false);
+  });
+
+  it("refuses honestly when the fallback also has nothing, and says the match was strong", async () => {
+    const empty: AnswerGenerator = {
+      tier: "extractive",
+      pack: { maxArticles: 8, tokenBudget: 100000 },
+      availability: async () => ({ tier: "extractive" as const, state: "available" as const }),
+      async *answer() {
+        // nothing at all
+      },
+    };
+    const events = await drain(
+      answerQuery({ retrieve: strong, generator: stub(REFUSAL_TEXT), floors, fallback: empty }, "q"),
+    );
+    const refusal = events.find((e) => e.kind === "refusal") as Extract<AnswerEvent, { kind: "refusal" }>;
+    expect(refusal).toBeDefined();
+    expect(refusal.reason).toBe("model-declined");
+    // The flag that stops the panel inventing a diagnosis the scores disprove.
+    expect(refusal.confident).toBe(true);
+  });
+
+  it("survives a fallback that throws, and still refuses rather than erroring out", async () => {
+    const broken: AnswerGenerator = {
+      tier: "nano",
+      pack: { maxArticles: 8, tokenBudget: 100000 },
+      availability: async () => ({ tier: "nano" as const, state: "available" as const }),
+      // eslint-disable-next-line require-yield
+      async *answer() {
+        throw new Error("fallback exploded");
+      },
+    };
+    const events = await drain(
+      answerQuery({ retrieve: strong, generator: stub(REFUSAL_TEXT), floors, fallback: broken }, "q"),
+    );
+    const refusal = events.find((e) => e.kind === "refusal") as Extract<AnswerEvent, { kind: "refusal" }>;
+    expect(refusal?.reason).toBe("model-declined");
+    expect(events.at(-1)?.kind).toBe("done");
+  });
+
+  it("marks a middling decline as not confident, so the copy stays hedged", async () => {
+    const middling = async (): Promise<RetrieveResult> => ({
+      articles: [hit(0), hit(1), hit(2)],
+      topScore: 0.72,
+      denseAvailable: true,
+    });
+    const empty: AnswerGenerator = {
+      tier: "extractive",
+      pack: { maxArticles: 8, tokenBudget: 100000 },
+      availability: async () => ({ tier: "extractive" as const, state: "available" as const }),
+      async *answer() {},
+    };
+    const events = await drain(
+      answerQuery({ retrieve: middling, generator: stub(REFUSAL_TEXT), floors, fallback: empty }, "q"),
+    );
+    const refusal = events.find((e) => e.kind === "refusal") as Extract<AnswerEvent, { kind: "refusal" }>;
+    expect(refusal.confident).toBeUndefined();
+  });
+
+  it("offers the per-page pick with the refusal instead of withholding it", async () => {
+    // The pick sets `focused`, which suspends the floor and answers from that
+    // one document — the only control that reliably gets past a decline, and it
+    // used to be suppressed on exactly this turn.
+    const empty: AnswerGenerator = {
+      tier: "extractive",
+      pack: { maxArticles: 8, tokenBudget: 100000 },
+      availability: async () => ({ tier: "extractive" as const, state: "available" as const }),
+      async *answer() {},
+    };
+    const events = await drain(
+      answerQuery(
+        {
+          retrieve: strong,
+          generator: stub(REFUSAL_TEXT),
+          floors,
+          fallback: empty,
+          // scatterDelta 1 makes every result count as scattered, so the chips
+          // are guaranteed and the test is about where they are offered, not
+          // about whether the scatter rule fires.
+          refine: { maxOptions: 3, scatterDelta: 1, minDistinctPages: 2, maxLabelChars: 48 },
+        },
+        "q",
+      ),
+    );
+    const refusal = events.find((e) => e.kind === "refusal") as Extract<AnswerEvent, { kind: "refusal" }>;
+    expect(refusal.refine?.options.length).toBeGreaterThan(0);
+  });
+});

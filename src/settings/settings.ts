@@ -7,6 +7,7 @@ import type { AnswerSettings } from "@/generator/select.js";
 import { DEFAULT_EMBEDDING_MODEL_ID } from "@/embed/models.js";
 import { DEFAULT_AUTO_REFRESH_DAYS } from "@/crawl/autoRefresh.js";
 import { DEFAULT_FLOORS, type ConfidenceFloors } from "@/retrieval/confidence.js";
+import { log } from "@/lib/log.js";
 
 export interface Settings {
   readonly answer: AnswerSettings;
@@ -54,6 +55,17 @@ export interface Settings {
    * has a labelled set.
    */
   readonly rewriteQueries: boolean;
+  /**
+   * Reuse a stored answer when the same question is asked again.
+   *
+   * On by default. The cache is keyed on the index's `lastIndexedAt` and on
+   * every setting that changes an answer, so a hit can only ever be an answer
+   * the current inputs would produce again — which makes "off" a preference
+   * about freshness rather than a correctness switch. It exists because that
+   * preference is real: someone tuning a model or a prompt wants to see the
+   * model run, not a recording of the last time it did.
+   */
+  readonly cacheAnswers: boolean;
 }
 
 /**
@@ -99,6 +111,7 @@ const DEFAULTS: Settings = {
   hyde: false,
   rerank: false,
   rewriteQueries: false,
+  cacheAnswers: true,
 };
 
 /**
@@ -118,7 +131,7 @@ function readAnswer(stored: Record<string, unknown>): AnswerSettings {
   const raw = stored["answer"];
   if (raw === undefined || raw === null) return DEFAULTS.answer;
   if (typeof raw !== "object") {
-    console.warn("sherpa: stored answer settings are not an object; using defaults", raw);
+    log.warn("settings_answer_not_object", { stored: typeof raw });
     return DEFAULTS.answer;
   }
 
@@ -131,10 +144,10 @@ function readAnswer(stored: Record<string, unknown>): AnswerSettings {
     // something to do quietly.
     const inferable =
       typeof a["provider"] === "string" && typeof a["apiKey"] === "string" && a["apiKey"] !== "";
-    console.warn(
-      `sherpa: stored answer settings have no valid mode (${String(mode)}); ` +
-        (inferable ? "inferring byok from the saved key." : "falling back to auto."),
-    );
+    log.warn("settings_answer_mode_invalid", {
+      mode: String(mode),
+      resolution: inferable ? "inferred_byok" : "default_auto",
+    });
     if (!inferable) return DEFAULTS.answer;
   }
 
@@ -176,10 +189,7 @@ export async function loadSettings(): Promise<Settings> {
    * console to distinguish it from the user simply not having saved.
    */
   if (!hasStorage()) {
-    console.warn(
-      "sherpa: chrome.storage unavailable in this context — using DEFAULT settings, " +
-        "so any BYOK key, floors or model choice the user saved is being ignored here.",
-    );
+    log.warn("settings_storage_unavailable", { using: "defaults" });
     return DEFAULTS;
   }
   const s = await chrome.storage.local.get([
@@ -193,6 +203,7 @@ export async function loadSettings(): Promise<Settings> {
     "floors",
     "floorsOverride",
     "rewriteQueries",
+    "cacheAnswers",
   ]);
   return {
     answer: readAnswer(s),
@@ -217,6 +228,15 @@ export async function loadSettings(): Promise<Settings> {
     hyde: s["hyde"] === true,
     rerank: s["rerank"] === true,
     rewriteQueries: s["rewriteQueries"] === true,
+    /**
+     * Defaults to on, so a missing key is not read as an opt-out.
+     *
+     * `=== true` would turn every existing install's silence into "caching
+     * off", which is the same class of bug as `floorsOverride`: absence is not
+     * a decision, and treating it as one silently discards a default the
+     * product chose deliberately.
+     */
+    cacheAnswers: s["cacheAnswers"] !== false,
   };
 }
 

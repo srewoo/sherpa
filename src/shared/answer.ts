@@ -39,12 +39,35 @@ export type PanelEvent =
       readonly facet?: Facet;
     }
   | { readonly kind: "delta"; readonly delta: string }
+  /**
+   * Drop the deltas received so far; the tier changed mid-turn.
+   *
+   * Sent when the answering model declined and a tier that cannot decline is
+   * answering in its place — see `AnswerEvent.restart`. The panel must reset
+   * the accumulated text, not append to it.
+   */
+  | { readonly kind: "restart"; readonly tier: AnswerTier; readonly notice: string }
+  /**
+   * A reply that had nothing to do with the index.
+   *
+   * Sent for greetings, thanks and goodbyes, which the gate in
+   * `retrieval/intent.ts` answers without embedding, searching or calling a
+   * model. It is a distinct event rather than a plain `delta` because the panel
+   * must *not* draw its usual provenance furniture around it: a tier line
+   * reading "Extractive · ranked passages, no model" under the word "Hello"
+   * claims a search happened, and none did.
+   */
+  | { readonly kind: "chat"; readonly text: string }
   | {
       readonly kind: "refusal";
       readonly nearest: readonly WireSource[];
       readonly reason: RefusalReason;
       /** The provider's own error message, when there is one. */
       readonly detail?: string;
+      /** Retrieval was strong and the model still declined — see AnswerEvent. */
+      readonly confident?: boolean;
+      /** Per-page picks, which suspend the floor and answer from one document. */
+      readonly refine?: { readonly options: readonly RefineOption[]; readonly facet?: Facet };
     }
   | { readonly kind: "done" };
 

@@ -481,6 +481,11 @@ kbd {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .composer-send:hover { background: var(--primary-deep); }
+/* Stop reads as a neutral interruption, not a destructive act: the answer
+   already on screen is kept, so a red button would overstate what happens. */
+.composer-stop { background: var(--ink-soft, #6B6257); }
+.composer-stop:hover { background: var(--ink, #3B352E); }
+.composer-stop rect { fill: currentColor; stroke: none; }
 .composer-hint { display: flex; align-items: center; justify-content: space-between;
   margin-top: 8px; font-size: 11.5px; color: var(--ink-faint); }
 

@@ -22,8 +22,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Includes the eval gate (Recall@5 ≥ 0.85, false-answer ≤ 0.03) and the
-      # retrieval perf budget — PRD §7.2/7.3/7.6.
+      # The layering is real but was enforced by nobody. These contracts are
+      # the equivalent of Echo's `.importlinter` — see .dependency-cruiser.cjs.
+      - name: Architecture boundaries
+        run: npm run lint:deps
+
+      # Includes the eval gate (Recall@5 ≥ 0.85, false-answer ≤ 0.03), the
+      # retrieval perf budget — PRD §7.2/7.3/7.6 — and the extractor/chunker
+      # fuzz suite.
       - name: Unit tests, eval gate and perf budgets
         run: npm test
 

@@ -48,12 +48,40 @@ export type AnswerState =
       readonly certainty?: Certainty;
       /** Other readings of the question, shown under the answer. */
       readonly refine?: RefineView;
+      /**
+       * Nothing was searched and no model ran — a greeting, answered locally.
+       *
+       * Suppresses the tier line and the source list, because both are
+       * provenance claims and there is no provenance to report. Showing
+       * "Extractive · ranked passages, no model" beneath "Hello" would assert a
+       * search that never happened.
+       */
+      readonly conversational?: boolean;
     }
   | {
       readonly kind: "refusal";
       readonly nearest: readonly SourceView[];
       readonly reason: RefusalReason;
       readonly detail?: string;
+      /**
+       * Retrieval was strong and the model declined anyway.
+       *
+       * Changes the copy from a guess into a statement, and it is the guess
+       * that made the old screen indefensible: "the wording may not match how
+       * your docs put it" sat directly above three sources reading 86%, 79% and
+       * 76%. At those numbers the wording matched.
+       */
+      readonly confident?: boolean;
+      /**
+       * Per-page picks offered *with* the refusal.
+       *
+       * A pick sets `focused`, which suspends the refusal floor and answers
+       * from that one document — the one mechanism that reliably gets past a
+       * decline, and it used to be withheld from precisely the turn that needed
+       * it. Same shape as `RefineView` on an answer, deliberately: it is the
+       * same control doing the same thing.
+       */
+      readonly refine?: RefineView;
     };
 
 export interface Turn {

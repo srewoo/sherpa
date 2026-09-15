@@ -112,3 +112,77 @@ describe("chunkPage", () => {
     expect(new Set(positions).size).toBe(positions.length);
   });
 });
+
+/**
+ * Found by `extract/fuzz.test.ts`. `packSentences` only ever split *between*
+ * sentences, so any run the splitter returned whole passed through at whatever
+ * size it was — and an oversized chunk is truncated by the embedder, leaving a
+ * vector that describes a prefix and stored text that describes the passage.
+ */
+describe("a paragraph with no sentence punctuation", () => {
+  it("is still split, rather than becoming one enormous chunk", () => {
+    const huge = [{ type: "paragraph" as const, text: "word ".repeat(20_000) }];
+    const drafts = chunkPage(huge, { title: "T", breadcrumb: ["D"] });
+    expect(drafts.length).toBeGreaterThan(1);
+    for (const d of drafts) {
+      expect(estimateTokens(d.body)).toBeLessThanOrEqual(DEFAULT_CHUNK_OPTIONS.maxTokens * 2);
+    }
+  });
+
+  it("splits CJK prose, which does not use a full stop at all", () => {
+    // `。` rather than `.` — without it in the terminator set, a page of
+    // Japanese or Chinese documentation is one sentence and never splits.
+    const text = "これはテストです。".repeat(3000);
+    const drafts = chunkPage([{ type: "paragraph", text }], { title: "T", breadcrumb: ["D"] });
+    expect(drafts.length).toBeGreaterThan(1);
+  });
+
+  it("splits a run with no whitespace either, on characters", () => {
+    const drafts = chunkPage([{ type: "paragraph", text: "z".repeat(100_000) }], { title: "T", breadcrumb: ["D"] });
+    expect(drafts.length).toBeGreaterThan(1);
+  });
+
+  it("still breaks ordinary prose on sentence boundaries, not mid-sentence", () => {
+    const text = "This is a sentence about assets. ".repeat(200);
+    const drafts = chunkPage([{ type: "paragraph", text }], { title: "T", breadcrumb: ["D"] });
+    // Every chunk ends at a full stop: the word-level split is a fallback for
+    // runs that have no sentence boundary, not the normal path.
+    for (const d of drafts) expect(d.body.trim().endsWith(".")).toBe(true);
+  });
+});
+
+/**
+ * The second half of the same fuzz finding. A paragraph of "<5000 x's> and a
+ * few short words" has five words, so the word-packing path ran instead of the
+ * character slicer — and then emitted the 5000-character word whole, because
+ * packing words can never break one apart. Minified blobs and base64 payloads
+ * with a line of prose beside them produce exactly this shape.
+ */
+describe("a single word larger than the whole ceiling", () => {
+  it("is split even when other words sit beside it", () => {
+    const text = `${"x".repeat(5000)} and four short words`;
+    const drafts = chunkPage([{ type: "paragraph", text }], { title: "T", breadcrumb: ["D"] });
+    expect(drafts.length).toBeGreaterThan(1);
+    for (const d of drafts) {
+      expect(estimateTokens(d.body)).toBeLessThanOrEqual(DEFAULT_CHUNK_OPTIONS.maxTokens * 2);
+    }
+  });
+});
+
+describe("estimateTokens", () => {
+  it("is unchanged for ordinary prose", () => {
+    // The character floor added for no-whitespace input must not move normal
+    // text, or every existing chunk size and calibrated floor shifts with it.
+    const prose = "This is an ordinary sentence about resetting a password.";
+    const words = prose.trim().split(/\s+/).length;
+    expect(estimateTokens(prose)).toBe(Math.ceil(words / 0.75));
+  });
+
+  it("no longer reports a 100KB unbroken string as two tokens", () => {
+    expect(estimateTokens("z".repeat(100_000))).toBeGreaterThan(1000);
+  });
+
+  it("is zero for empty input", () => {
+    expect(estimateTokens("   ")).toBe(0);
+  });
+});

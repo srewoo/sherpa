@@ -28,10 +28,27 @@ export const DEFAULT_CHUNK_OPTIONS: ChunkOptions = {
 
 const ATOMIC: ReadonlySet<Block["type"]> = new Set(["code", "table", "list"]);
 
-/** Rough token estimate: ~0.75 words per token. */
+/**
+ * Rough token estimate: ~0.75 words per token, with a floor on characters.
+ *
+ * The word count alone is defeated by anything that does not use spaces. A
+ * 100 KB unbroken string — minified script that escaped extraction, a base64
+ * blob, a long hash, CJK text — counts as *one word*, so this returned 2 and
+ * every size check downstream waved it through: `toUnits` saw no oversized
+ * paragraph, the splitter never ran, and the chunk went to the embedder to be
+ * silently truncated. Found by `extract/fuzz.test.ts`.
+ *
+ * The floor is inert for ordinary prose. English averages about 5.5 characters
+ * per word including the space, so the word estimate already works out near
+ * `chars / 4.1` — comfortably above `chars / 6`, which therefore never binds.
+ * It only takes over when the whitespace the word count depends on is missing,
+ * which is exactly the case the word count cannot see.
+ */
 export function estimateTokens(text: string): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.ceil(words / 0.75);
+  const trimmed = text.trim();
+  if (trimmed === "") return 0;
+  const words = trimmed.split(/\s+/).filter(Boolean).length;
+  return Math.max(Math.ceil(words / 0.75), Math.ceil(trimmed.length / 6));
 }
 
 interface HeadingFrame {
@@ -75,10 +92,91 @@ function pathString(ctx: PageContext, stack: readonly HeadingFrame[]): string {
   return deduped.join(" > ");
 }
 
+/**
+ * Sentence terminators, Latin and otherwise.
+ *
+ * `.!?` alone treats a page of Chinese or Japanese documentation as a single
+ * sentence — those scripts end sentences with `\u3002`, and `\uFF01` / `\uFF1F`
+ * are the full-width exclamation and question marks. Without them the splitter
+ * returns one piece, the packer cannot break it, and every paragraph on the
+ * page becomes one oversized chunk. Arabic's `\u061F` is here for the same
+ * reason.
+ */
+const TERMINATORS = ".!?\u3002\uFF01\uFF1F\u061F\u06D4";
+
 function splitSentences(text: string): string[] {
-  const matched = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g);
+  const re = new RegExp(`[^${TERMINATORS}]+[${TERMINATORS}]+|\\S[^${TERMINATORS}]*$`, "g");
+  const matched = text.match(re);
   const trimmed = (matched ?? [text]).map((s) => s.trim()).filter(Boolean);
   return trimmed.length ? trimmed : [text.trim()];
+}
+
+/**
+ * Break a single over-long "sentence" on word boundaries.
+ *
+ * Found by fuzzing, and it is not the exotic case it looks like. `packSentences`
+ * only ever splits *between* sentences, so any run of text the splitter returns
+ * whole — a paragraph with no terminating punctuation at all — passed through
+ * however large it was. Real sources do this constantly: flattened tables, log
+ * output pasted into a page, machine-generated reference lists, and any script
+ * whose terminators were missing from the pattern above.
+ *
+ * The consequence was silent and expensive. An oversized chunk is truncated by
+ * the embedder, so its vector describes the first few hundred tokens while the
+ * stored text describes the whole passage — the page ranks badly for content it
+ * visibly contains, and nothing anywhere reports a problem.
+ *
+ * Falls back to a hard character slice when there are no spaces either (a
+ * minified blob, or a script that does not use them), because a piece that
+ * cannot be split is the one case where returning it unchanged reintroduces
+ * exactly the bug.
+ */
+function sliceOnCharacters(text: string, target: number): string[] {
+  // ~0.75 words per token at roughly 5 characters a word, matching what
+  // `estimateTokens` assumes, so the pieces land near the target rather than
+  // at some unrelated size.
+  const size = Math.max(1, Math.floor(target * 0.75 * 5));
+  const out: string[] = [];
+  for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size));
+  return out;
+}
+
+function splitLongRun(text: string, target: number): string[] {
+  if (estimateTokens(text) <= target) return [text];
+  const words = text.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  let cur: string[] = [];
+  let tokens = 0;
+  const flushCur = (): void => {
+    if (cur.length) out.push(cur.join(" "));
+    cur = [];
+    tokens = 0;
+  };
+
+  for (const word of words) {
+    const wt = estimateTokens(word);
+    /**
+     * A single word can be over the ceiling on its own, and packing words can
+     * never break one apart.
+     *
+     * This was the second half of the same bug, and it survived the first fix.
+     * A paragraph of "<5000 x's> and four short words" has five words, so the
+     * word-packing path ran instead of the character slicer — and then emitted
+     * the 5000-character word as one 834-token piece, because every branch in
+     * that loop moves whole words. Real pages produce exactly this shape: a
+     * minified blob or a base64 payload with a few words of prose beside it.
+     */
+    if (wt > target) {
+      flushCur();
+      out.push(...sliceOnCharacters(word, target));
+      continue;
+    }
+    if (tokens > 0 && tokens + wt > target) flushCur();
+    cur.push(word);
+    tokens += wt;
+  }
+  flushCur();
+  return out;
 }
 
 /** Last ~ratio of sentences of a prose string, for overlap. */
@@ -94,15 +192,20 @@ function packSentences(text: string, target: number): string[] {
   const out: string[] = [];
   let cur: string[] = [];
   let tokens = 0;
-  for (const s of splitSentences(text)) {
-    const st = estimateTokens(s);
-    if (tokens > 0 && tokens + st > target) {
-      out.push(cur.join(" "));
-      cur = [];
-      tokens = 0;
+  // `splitLongRun` is applied per sentence, not to the whole string: a
+  // paragraph of ordinary sentences still breaks on sentence boundaries, and
+  // only a run that is itself too long gets broken mid-sentence.
+  for (const sentence of splitSentences(text)) {
+    for (const s of splitLongRun(sentence, target)) {
+      const st = estimateTokens(s);
+      if (tokens > 0 && tokens + st > target) {
+        out.push(cur.join(" "));
+        cur = [];
+        tokens = 0;
+      }
+      cur.push(s);
+      tokens += st;
     }
-    cur.push(s);
-    tokens += st;
   }
   if (cur.length) out.push(cur.join(" "));
   return out;

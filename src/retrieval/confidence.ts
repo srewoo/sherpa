@@ -20,18 +20,23 @@
  * on content that was sitting right there.
  */
 
+import type { ConfidenceFloors } from "@/domain/retrieval.js";
+
 export type Certainty = "confident" | "uncertain";
 
 export type ScoreVerdict =
   | { readonly kind: "answer"; readonly certainty: Certainty }
   | { readonly kind: "refuse" };
 
-export interface ConfidenceFloors {
-  /** Below this, refuse. */
-  readonly refuse: number;
-  /** At or above this, answer without hedging. Between the two, hedge. */
-  readonly confident: number;
-}
+/**
+ * Re-exported from `domain/retrieval.ts`, where it is declared.
+ *
+ * A stored `Calibration` is a pair of these, and `IndexMeta` holds one — so the
+ * shape has to live somewhere the domain layer can name without importing
+ * upwards. The behaviour that interprets the bands stays here; only the shape
+ * moved.
+ */
+export type { ConfidenceFloors };
 
 /**
  * Shipped defaults, now measured rather than guessed.

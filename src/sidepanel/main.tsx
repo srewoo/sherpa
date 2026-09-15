@@ -2,6 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import "@/ui/styles.css";
+import { setLogContext } from "@/lib/log.js";
+
+setLogContext("panel");
 
 /**
  * Tell the worker the panel is up, and — by this port dropping when the panel

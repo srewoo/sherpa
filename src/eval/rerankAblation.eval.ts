@@ -33,7 +33,7 @@ import { createReranker } from "@/retrieval/rerank.js";
 import { findModel, DEFAULT_EMBEDDING_MODEL_ID } from "@/embed/models.js";
 import type { StoredChunk } from "@/domain/records.js";
 
-import { parseCorpusExport, type CorpusExport } from "./corpusExport.js";
+import { parseCorpusExport, type CorpusExport } from "@/storage/corpusExport.js";
 
 const ROOT = resolve(dirname(new URL(import.meta.url).pathname), "../..");
 const CORPUS_DIR = join(ROOT, "eval");

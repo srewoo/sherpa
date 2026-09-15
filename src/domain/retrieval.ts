@@ -60,3 +60,46 @@ export interface RetrievedChunk extends StoredChunk {
   /** True when pulled in by neighbour expansion, not a direct hit (5.7.5). */
   readonly viaNeighbour: boolean;
 }
+
+/**
+ * The cosine bands that decide whether to answer, hedge, or refuse.
+ *
+ * Declared in the domain layer because a stored `Calibration` on `IndexMeta` is
+ * a pair of these — the shape crosses the storage boundary, so it cannot live
+ * above it. `retrieval/confidence.ts` owns the behaviour and re-exports the
+ * type, which is where the reasoning about the numbers themselves belongs.
+ */
+export interface ConfidenceFloors {
+  /** Below this, refuse. */
+  readonly refuse: number;
+  /** At or above this, answer without hedging. Between the two, hedge. */
+  readonly confident: number;
+}
+
+/**
+ * What one search returned.
+ *
+ * In the domain layer because three retrieval modules need to name it and
+ * declaring it in the one that produces it made them cyclic — the cache
+ * describes what it holds, the session holds a cache, and retrieval loads a
+ * session.
+ */
+export interface RetrieveResult {
+  readonly articles: readonly RetrievedArticle[];
+  /**
+   * Best *absolute* cosine similarity across the results — what the refusal
+   * floor compares against (PRD 5.8.8).
+   *
+   * Deliberately not the fused score: min-max normalisation is relative to the
+   * query, so the top fused score is ~1 for every query including ones the
+   * index cannot answer. Using it as a gate makes the adversarial false-answer
+   * rate 100%. Ranking is relative; the answer/refuse decision has to be
+   * absolute.
+   */
+  readonly topScore: number;
+  /**
+   * False when the embedder was unavailable and only BM25 ran. The caller must
+   * not compare `topScore` to a cosine floor in that case — there is no cosine.
+   */
+  readonly denseAvailable: boolean;
+}

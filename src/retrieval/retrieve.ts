@@ -15,7 +15,7 @@
  * embedder and session are injected so this is testable without a browser.
  */
 
-import type { RetrievedArticle } from "@/domain/retrieval.js";
+import type { RetrievedArticle, RetrieveResult } from "@/domain/retrieval.js";
 import type { SherpaDatabase } from "@/storage/db.js";
 import type { StoredChunk } from "@/domain/records.js";
 import { normalizeInPlace, dot } from "@/embed/vecmath.js";
@@ -27,6 +27,7 @@ import { expandQuery, DEFAULT_EXPANSION, type ExpansionOptions } from "./expansi
 import { applyRerank, DEFAULT_RERANK, type RerankOptions, type Reranker } from "./rerank.js";
 import { priorBoosts, type PriorIndex } from "./prior.js";
 import { sameSection } from "@/lib/url.js";
+import { log } from "@/lib/log.js";
 
 export interface Embedderish {
   readonly dim: number;
@@ -99,25 +100,16 @@ export const DEFAULT_RETRIEVE: RetrieveOptions = {
   rerank: DEFAULT_RERANK,
 };
 
-export interface RetrieveResult {
-  readonly articles: readonly RetrievedArticle[];
-  /**
-   * Best *absolute* cosine similarity across the results — what the refusal
-   * floor compares against (PRD 5.8.8).
-   *
-   * Deliberately not the fused score: min-max normalisation is relative to the
-   * query, so the top fused score is ~1 for every query including ones the
-   * index cannot answer. Using it as a gate makes the adversarial false-answer
-   * rate 100%. Ranking is relative; the answer/refuse decision has to be
-   * absolute.
-   */
-  readonly topScore: number;
-  /**
-   * False when the embedder was unavailable and only BM25 ran. The caller must
-   * not compare `topScore` to a cosine floor in that case — there is no cosine.
-   */
-  readonly denseAvailable: boolean;
-}
+/**
+ * Re-exported from `domain/retrieval.ts`, where it is declared.
+ *
+ * It moved to break the last real import cycle: `cache.ts` needs the shape to
+ * describe what it caches, `session.ts` needs the cache, and `retrieve.ts`
+ * needs the session — so declaring the shape here made the three mutually
+ * dependent for the sake of one type. A result shape is domain vocabulary; the
+ * retrieval that produces one stays here.
+ */
+export type { RetrieveResult };
 
 /**
  * Rescore the head of the ranked list with the cross-encoder.
@@ -222,7 +214,7 @@ export async function retrieve(
     q = embedded.slice(0, dim);
     normalizeInPlace(q);
   } catch (error) {
-    console.warn("sherpa: embedding unavailable, falling back to keyword search", error);
+    log.warn("dense_unavailable_keyword_fallback", { error: String(error) });
   }
 
   const dense = q ? cosineTopK(q, data, dim, count, options.topK) : [];
